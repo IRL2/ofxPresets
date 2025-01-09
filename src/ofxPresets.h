@@ -48,8 +48,8 @@ private:
 	std::string folderPath = "data\\";
 
     std::string sequenceString;
-    //std::vector<int> sequence;
     int sequenceIndex = 0;
+
     float sequencePresetDuration = DEFAULT_SEQUENCE_PRESET_DURATION;
     float sequenceTransitionDuration = DEFAULT_SEQUENCE_TRANSITION_DURATION;
     float lastUpdateTime = 0.0f;
@@ -57,6 +57,8 @@ private:
     bool isPlaying = false;
 
     std::unordered_map<std::string, InterpolationData> interpolationDataMap;
+    std::unordered_map<std::string, std::unordered_map<std::string, float>> currentParameterValues;
+    void storeCurrentValues();
 
     std::vector<ofxPresetsParametersBase*>* params; // local reference to the parameters
 
@@ -132,6 +134,8 @@ void ofxPresets::applyJsonToParameters(const std::string& jsonFilePath, float in
 
     interpolationDataMap.clear();
 
+	storeCurrentValues(); // needed for interpolation
+
     // Iterate over all items in the JSON
     for (auto& [group, v] : j.items()) {  // first level is the parameter group
 
@@ -204,6 +208,28 @@ void ofxPresets::applyPreset(int id, float duration = DEFAULT_INTERPOLATION_DURA
 
 
 /// <summary>
+/// Save the current values of the parameters to use them as a reference for interpolation
+/// </summary>
+void ofxPresets::storeCurrentValues() {
+    for (auto& paramGroup : *params) {
+        std::unordered_map<std::string, float> groupValues;
+        for (auto& [key, param] : paramGroup->parameterMap) {
+            if (param) { // Check if the parameter is not null
+                const std::string paramTypeName = typeid(*param).name();
+                if (paramTypeName == typeid(ofParameter<int>).name()) {
+                    groupValues[key] = dynamic_cast<ofParameter<int>*>(param)->get();
+                }
+                else if (paramTypeName == typeid(ofParameter<float>).name()) {
+                    groupValues[key] = dynamic_cast<ofParameter<float>*>(param)->get();
+                }
+            }
+        }
+        currentParameterValues[paramGroup->groupName] = groupValues;
+    }
+}
+
+
+/// <summary>
 /// public method to save the current parameters to a json file
 /// </summary>
 /// <param name="id">The preset ID (1-based)</param>
@@ -214,6 +240,11 @@ void ofxPresets::savePreset(int id) {
 }
 
 
+/// <summary>
+/// Given an integer ID, convert it to a file path string
+/// </summary>
+/// <param name="id"></param>
+/// <returns>filename is two digits. ie. 1 -> data\01.json </returns>
 std::string ofxPresets::convertIDtoJSonFilename(int id) {
     std::string idStr = (id < 10 ? "0" : "") + std::to_string(id);
     std::string jsonFilePath = folderPath + idStr + ".json";
@@ -337,46 +368,40 @@ void ofxPresets::updateParameters() {
 
     float currentTime = ofGetElapsedTimef();
 
-    for (auto& paramGroup : *params) {
-        const std::string& groupName = paramGroup->groupName;
+    for (auto& [group, interpolationData] : interpolationDataMap) {
+        //const std::string& groupName = paramGroup->groupName;
 
-        //auto it = interpolationDataMap.find(paramGroup->parameterMap.begin()->first);
-        //if (it != interpolationDataMap.end()) {
-            //InterpolationData& interpolationData = it->second;
-        if (interpolationDataMap.find(groupName) != interpolationDataMap.end()) {
-            InterpolationData& interpolationData = interpolationDataMap[groupName];
+        //if (interpolationDataMap.find(groupName) != interpolationDataMap.end()) {
+            //InterpolationData& interpolationData = interpolationDataMap[groupName];
             float elapsedTime = currentTime - interpolationData.startTime;
             float t = std::min(elapsedTime / interpolationData.duration, 1.0f);
 
             for (auto& [key, targetValue] : interpolationData.targetValues) {
-                auto param = paramGroup->parameterMap[key];
-                if (param == nullptr) {
-                    continue;
-                }
+                float startValue = currentParameterValues[group][key];
+                float interpolatedValue = ofxeasing::map_clamp(t, 0.0f, 1.0f, startValue, targetValue, &ofxeasing::linear::easeNone);
 
-                const std::string paramTypeName = typeid(*param).name();
-
-                if (paramTypeName == typeid(ofParameter<int>).name()) {
-                    int currentValue = dynamic_cast<ofParameter<int>*>(param)->get();
-                    //if (t > 1.0f) t = 1.0f;
-                    int interpolatedValue = ofxeasing::map_clamp(t, 0.0f, 1.0f, currentValue, targetValue, ofxeasing::linear::easeIn);
-                    dynamic_cast<ofParameter<int>*>(param)->set(interpolatedValue);
-                }
-                else if (paramTypeName == typeid(ofParameter<float>).name()) {
-                    float currentValue = dynamic_cast<ofParameter<float>*>(param)->get();
-                    //if (t > 1.0f) t = 1.0f;
-                    float interpolatedValue = ofxeasing::map_clamp(t, 0.0f, 1.0f, currentValue, targetValue, ofxeasing::linear::easeIn);
-                    dynamic_cast<ofParameter<float>*>(param)->set(interpolatedValue);
+                for (auto& paramGroup : *params) {
+                    if (paramGroup->groupName == group) {
+                        auto param = paramGroup->parameterMap[key];
+                        const std::string paramTypeName = typeid(*param).name();
+                        if (paramTypeName == typeid(ofParameter<int>).name()) {
+                            dynamic_cast<ofParameter<int>*>(param)->set(static_cast<int>(interpolatedValue));
+                        }
+                        else if (paramTypeName == typeid(ofParameter<float>).name()) {
+                            dynamic_cast<ofParameter<float>*>(param)->set(interpolatedValue);
+                        }
+                    }
                 }
             }
 
-            if (currentTime - interpolationData.startTime >= interpolationData.duration) {
-                interpolationDataMap.erase(groupName);
+            if (t >= 1.0f) { // it means (currentTime - interpolationData.startTime >= interpolationData.duration)
+                interpolationDataMap.erase(group);
                 if (interpolationDataMap.empty()) {
 					onTransitionFinished();
+                    break;
                 }
             }
-        }
+        //}
     }
 }
 
@@ -411,11 +436,10 @@ void ofxPresets::clonePresetTo(int from, int to) {
 void ofxPresets::loadSequence(const std::string& seqString) {
     this->sequenceString = seqString;
 
-    //sequence.set()
     sequence.set(parseSequence(this->sequenceString));
     sequenceIndex = 0;
 
-    ofLog() << "ofxPresets::loadSequence:: Sequence loaded " << ofToString(sequence);
+    ofLog() << "ofxPresets::loadSequence:: Sequence loaded " << ofToString(sequence.get());
 }
 
 void ofxPresets::playSequence(float presetDuration = DEFAULT_SEQUENCE_PRESET_DURATION, float transitionDuration = DEFAULT_SEQUENCE_TRANSITION_DURATION) {
