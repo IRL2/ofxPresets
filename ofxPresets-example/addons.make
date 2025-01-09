@@ -1,2 +1,3 @@
 ofxEasing
+ofxGui
 ofxPresets

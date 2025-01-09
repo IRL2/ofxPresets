@@ -1,8 +1,7 @@
 #include "ofApp.h"
 #include "ofxPresetsParametersBase.h"
 #include "ofxPresets.h"
-
-
+#include "ofxGui.h"
 
 struct Params : public ofxPresetsParametersBase {
 public:
@@ -15,27 +14,21 @@ public:
 
 		parameterMap["x"] = &x.set("x pos", 0);
 		parameterMap["y"] = &y;
+		// radius is not added to the map, so it won't be saved
 	}
 };
-
-ofParameterGroup g;
-
 Params p;
 std::vector<ofxPresetsParametersBase*> allParameters;
 
 ofxPresets manager;
 
+ofxPanel gui;
+ofxLabel currPreset;
+ofxLabel instructions;
+
 //--------------------------------------------------------------
 void ofApp::setup(){
-	//g.setName("params");
-	//g.add(p.x.set("x pos", 0));
-	//g.add(p.y.set("y pos", 0));
-
-	//for (auto pp : g) {
-	//	ofLog() << pp->getName();
-	//}
-
-	ofSetLogLevel(OF_LOG_VERBOSE);
+	//ofSetLogLevel(OF_LOG_VERBOSE);
 
 	allParameters = { &p };
 	manager.setup( allParameters );
@@ -45,16 +38,25 @@ void ofApp::setup(){
 	p.radius = 50;
 
 	ofAddListener(manager.transitionFinished, this, &ofApp::onPresetChanged);
+
+	gui.setup();
+	gui.add(manager.interpolationDuration.set("Transition duration", 0.5f, 0.0f, 20.0f));
+	gui.add(manager.sequencePresetDuration.set("Preset duration", 0.5f, 0.0f, 20.0f));
+	//gui.add()
+	gui.add(currPreset.setup("Current preset", ""));
+	gui.add(instructions.setup("Press 1-9 to apply a preset\n<Shift> 1-9 to save into a preset\nS to start a sequence\nC to stop the sequence", ""));
 }
 
 //--------------------------------------------------------------
 void ofApp::update(){
 	manager.update();
+	currPreset = ofToString(manager.getCurrentPreset());
 }
 
 //--------------------------------------------------------------
 void ofApp::draw(){
 	ofDrawCircle(p.x, p.y, p.radius);
+	gui.draw();
 }
 
 //--------------------------------------------------------------
@@ -66,28 +68,26 @@ void ofApp::keyReleased(ofKeyEventArgs& e) {
 			manager.savePreset(index);
 		}
 		else {
-			manager.applyPreset(index, 5.0f);
+			manager.applyPreset(index);
 		}
 	}
 
 	if (e.keycode == 'S') {
-		manager.loadSequence("1-3");
+		manager.loadSequence("1, 2, ?-5, 8");
 		manager.playSequence();
 	}
 
-	if (e.keycode == 'R') {
-		p.radius = ofRandom(5, 50);
-	}
-
 	if (e.keycode == 'C') {
-		manager.stopSequence();
+		manager.stop();
 	}
 }
 
+//--------------------------------------------------------------
 void ofApp::onPresetChanged() {
-	//ofLog() << "Preset changed";
+	ofLog() << "Recieving preset changed event";
 }
 
+//--------------------------------------------------------------
 void ofApp::keyPressed(int key){
 
 }
