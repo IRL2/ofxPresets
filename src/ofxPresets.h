@@ -48,7 +48,7 @@ private:
 	std::string folderPath = "data\\";
 
     std::string sequenceString;
-    std::vector<int> sequence;
+    //std::vector<int> sequence;
     int sequenceIndex = 0;
     float sequencePresetDuration = DEFAULT_SEQUENCE_PRESET_DURATION;
     float sequenceTransitionDuration = DEFAULT_SEQUENCE_TRANSITION_DURATION;
@@ -85,6 +85,7 @@ public:
     void playSequence(float sequenceDuration, float transitionDuration);
     void stopSequence();
 
+	ofParameter<std::vector<int>> sequence;
     int getCurrentPreset();
     void updateSequenceIndex();
 
@@ -410,26 +411,26 @@ void ofxPresets::clonePresetTo(int from, int to) {
 void ofxPresets::loadSequence(const std::string& seqString) {
     this->sequenceString = seqString;
 
-    sequence.clear();
-    sequence = parseSequence(this->sequenceString);
+    //sequence.set()
+    sequence.set(parseSequence(this->sequenceString));
     sequenceIndex = 0;
 
     ofLog() << "ofxPresets::loadSequence:: Sequence loaded " << ofToString(sequence);
 }
 
 void ofxPresets::playSequence(float presetDuration = DEFAULT_SEQUENCE_PRESET_DURATION, float transitionDuration = DEFAULT_SEQUENCE_TRANSITION_DURATION) {
-    ofLogNotice("ofxPresets::playSequence") << "Playing sequence index " << sequenceIndex << ": preset " << sequence[sequenceIndex] << " for " << presetDuration << "s and interpolating " << transitionDuration << "s";
+    ofLogNotice("ofxPresets::playSequence") << "Playing sequence index " << sequenceIndex << ": preset " << sequence.get()[sequenceIndex] << " for " << presetDuration << "s and interpolating " << transitionDuration << "s";
     this->sequencePresetDuration = presetDuration;
     this->sequenceTransitionDuration = transitionDuration;
     this->isPlaying = true;
 
-    if (sequence.size() == 0) {
+    if (sequence.get().size() == 0) {
         ofLogVerbose() << "ofxPresets::playSequence:: No sequence to play";
         return;
     }
 
-    ofLog() << "ofxPresets::playSequence:: Playing preset " << ofToString(sequence[sequenceIndex]);
-    applyPreset(sequence[sequenceIndex], sequenceTransitionDuration);
+    ofLog() << "ofxPresets::playSequence:: Playing preset " << ofToString(sequence.get()[sequenceIndex]);
+    applyPreset(sequence.get()[sequenceIndex], sequenceTransitionDuration);
 }
 
 
@@ -478,7 +479,7 @@ void ofxPresets::updateSequence() {
 /// </summary>
 void ofxPresets::updateSequenceIndex() {
     sequenceIndex++;
-    if (sequenceIndex >= sequence.size()) {
+    if (sequenceIndex >= sequence.get().size()) {
         sequenceIndex = 0;
     }
 }
@@ -516,9 +517,9 @@ void ofxPresets::onSequenceFinished() {
 /// </summary>
 /// <returns></returns>
 int ofxPresets::getCurrentPreset() {
-    if (sequence.size() > 0 && sequenceIndex <= sequence.size()) {
-		if (sequence[sequenceIndex] >= 0)
-            return sequence[sequenceIndex];
+    if (sequence.get().size() > 0 && sequenceIndex <= sequence.get().size()) {
+		if (sequence.get()[sequenceIndex] >= 0)
+            return sequence.get()[sequenceIndex];
     }
     return -1;
 }
