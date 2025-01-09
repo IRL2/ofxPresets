@@ -25,13 +25,13 @@
 
 const std::string DEFAULT_FOLDER_PATH = "data\\";
 const float DEFAULT_SEQUENCE_PRESET_DURATION = 5.0f;
-const float DEFAULT_SEQUENCE_TRANSITION_DURATION = 3.0f;
-const float DEFAULT_INTERPOLATION_DURATION = 0.0f;
+const float DEFAULT_INTERPOLATION_DURATION = 3.0f;
+const int MAX_RANDOM_PRESET = 16;
 
 
+// TODO: Use the map directly and store a common startTime, no need for a super struct
 struct InterpolationData {
     float startTime = 0.0f;
-    float duration = DEFAULT_INTERPOLATION_DURATION;
     std::unordered_map<std::string, float> targetValues;
 };
 
@@ -49,9 +49,8 @@ private:
 
     std::string sequenceString;
     int sequenceIndex = 0;
+    int lastAppliedPreset = 0;
 
-    float sequencePresetDuration = DEFAULT_SEQUENCE_PRESET_DURATION;
-    float sequenceTransitionDuration = DEFAULT_SEQUENCE_TRANSITION_DURATION;
     float lastUpdateTime = 0.0f;
     bool isTransitioning = false;  // flag to know if we are transitioning(interpolating) in the sequence
     bool isPlaying = false;
@@ -80,12 +79,14 @@ public:
     void setup(std::vector<ofxPresetsParametersBase*>& parameters);
     void update();
 
+    void applyPreset(int id);
     void applyPreset(int id, float duration);
     void savePreset(int id);
     void deletePreset(int id);
     void clonePresetTo(int from, int to);
 
     void loadSequence(const std::string& sequenceString);
+    void playSequence();
     void playSequence(float sequenceDuration, float transitionDuration);
     void stopSequence();
     void stopInterpolating();
@@ -100,6 +101,9 @@ public:
     bool presetExist(int id);
 
     void setFolderPath(const std::string& path);
+
+    ofParameter<float> sequencePresetDuration = DEFAULT_SEQUENCE_PRESET_DURATION;
+    ofParameter<float> interpolationDuration = DEFAULT_INTERPOLATION_DURATION;
 
     ofEvent<void> sequencePresetFinished;
     ofEvent<void> transitionFinished;
@@ -121,7 +125,7 @@ void ofxPresets::setup(std::vector<ofxPresetsParametersBase*>& parameters) {
 /// Apply the values from a JSON file to the parameters
 /// </summary>
 /// <param name="jsonFilePath">Full path to the json file</param>
-void ofxPresets::applyJsonToParameters(const std::string& jsonFilePath, float interpolationDuration) {
+void ofxPresets::applyJsonToParameters(const std::string& jsonFilePath, float duration) {
     ofLog(OF_LOG_NOTICE) << "ofxPresets::applyJsonToParameters:: Applying preset to parameters from " << jsonFilePath;
 
     // Read the JSON file
@@ -139,6 +143,8 @@ void ofxPresets::applyJsonToParameters(const std::string& jsonFilePath, float in
 
 	storeCurrentValues(); // needed for interpolation
 
+    interpolationDuration.set(duration);
+
     // Iterate over all items in the JSON
     for (auto& [group, v] : j.items()) {  // first level is the parameter group
 
@@ -148,7 +154,6 @@ void ofxPresets::applyJsonToParameters(const std::string& jsonFilePath, float in
 
                 InterpolationData interpolationData;
                 interpolationData.startTime = ofGetElapsedTimef();
-                interpolationData.duration = interpolationDuration; // Set the duration for interpolation
 
                 // iterate over all items in the group
                 for (auto& [key, value] : j[group].items()) {
@@ -192,21 +197,30 @@ void ofxPresets::applyJsonToParameters(const std::string& jsonFilePath, float in
     }
 }
 
+/// <summary>
+/// Apply a preset to the parameters
+/// Uses the global interpolation duration
+/// </summary>
+/// <param name="id"></param>
+void ofxPresets::applyPreset(int id) {
+	applyPreset(id, interpolationDuration);
+}
 
 /// <summary>
 /// Apply a preset to the parameters
 /// </summary>
 /// <param name="id"></param>
 /// <param name="parameterGroups"></param>
-/// <param name="duration">interpolation diration</param>
-void ofxPresets::applyPreset(int id, float duration = DEFAULT_INTERPOLATION_DURATION) {
+/// <param name="duration">This will update the global interpolationDuration</param>
+void ofxPresets::applyPreset(int id, float duration) {
 	if (id == -1) {
-        id = getRandomPreset(1, 16);
+        id = getRandomPreset(1, MAX_RANDOM_PRESET);
 	}
 
     std::string jsonFilePath = convertIDtoJSonFilename(id);
     if (fileExist(jsonFilePath)) {
         applyJsonToParameters(jsonFilePath, duration);
+        lastAppliedPreset = id;
     }
     else {
         ofLog() << "ofxPresets::applyPreset:: No json file for preset " << id << " on " << jsonFilePath;
@@ -398,7 +412,7 @@ void ofxPresets::updateParameters() {
 
     for (auto& [group, interpolationData] : interpolationDataMap) {
         float elapsedTime = currentTime - interpolationData.startTime;
-        float t = std::min(elapsedTime / interpolationData.duration, 1.0f);
+        float t = std::min(elapsedTime / interpolationDuration.get(), 1.0f);
 
         for (auto& [key, targetValue] : interpolationData.targetValues) {
             float startValue = currentParameterValues[group][key];
@@ -465,15 +479,25 @@ void ofxPresets::loadSequence(const std::string& seqString) {
     ofLog() << "ofxPresets::loadSequence:: Sequence loaded " << ofToString(sequence.get());
 }
 
+
+/// <summary>
+/// Starts playing the loaded sequence
+/// Uses sequencePresetDuration and interpolationDuration as default durations
+/// </summary>
+void ofxPresets::playSequence() {
+	playSequence(sequencePresetDuration, interpolationDuration);
+}
+
+
 /// <summary>
 /// Starts playing the loaded sequence
 /// </summary>
-/// <param name="presetDuration"></param>
-/// <param name="transitionDuration"></param>
-void ofxPresets::playSequence(float presetDuration = DEFAULT_SEQUENCE_PRESET_DURATION, float transitionDuration = DEFAULT_SEQUENCE_TRANSITION_DURATION) {
+/// <param name="presetDuration">This will update the global presetDuration value</param>
+/// <param name="transitionDuration">This will update the global presetDuration value</param>
+void ofxPresets::playSequence(float presetDuration, float transitionDuration) {
     ofLogNotice("ofxPresets::playSequence") << "Playing the loaded sequence with transition and preset durations: " << transitionDuration<< ", " << presetDuration;
-    this->sequencePresetDuration = presetDuration;
-    this->sequenceTransitionDuration = transitionDuration;
+    this->sequencePresetDuration.set(presetDuration);
+    this->interpolationDuration.set(transitionDuration);
     this->isPlaying = true;
 
 	// > to ensure the first preset is applied immediately (not waiting for the presetDuration to happen)
@@ -529,15 +553,15 @@ void ofxPresets::updateSequence() {
         float currentTime = ofGetElapsedTimef();
 
         if (isTransitioning) {
-            if (currentTime - lastUpdateTime >= sequenceTransitionDuration) {
+            if (currentTime - lastUpdateTime >= interpolationDuration.get()) {
                 isTransitioning = false;
                 lastUpdateTime = currentTime;
             }
         }
         else {
-            if (currentTime - lastUpdateTime >= sequencePresetDuration) {
+            if (currentTime - lastUpdateTime >= sequencePresetDuration.get()) {
                 lastUpdateTime = currentTime;
-                applyPreset(sequence.get()[sequenceIndex], sequenceTransitionDuration);
+                applyPreset(sequence.get()[sequenceIndex], interpolationDuration.get());
                 advanceSequenceIndex();
                 isTransitioning = true;
                 onPresetFinished();
@@ -588,18 +612,22 @@ void ofxPresets::onSequenceFinished() {
 
 /// <summary>
 /// Returns the current preset item in the sequence
+/// Will report the actual preset when -1 (random) is found
 /// </summary>
 /// <returns></returns>
 int ofxPresets::getCurrentPreset() {
-    if (sequence.get().size() > 0 && sequenceIndex <= sequence.get().size()) {
-        if (sequence.get()[sequenceIndex] >= 0)
-            return sequence.get()[sequenceIndex];
-    }
-    return -1;
+    return lastAppliedPreset;
+
+	// TODO: Should be enough to return lastAppliedPreset, but need more testing if need to report the -1
+    //if (sequence.get().size() > 0 && sequenceIndex <= sequence.get().size()) {
+    //    if (sequence.get()[sequenceIndex] >= 0)
+    //        return sequence.get()[sequenceIndex];
+    //}
+    //else {
+    //    return lastAppliedPreset;
+    //}
+    //return 0;
 }
-
-
-
 
 
 
