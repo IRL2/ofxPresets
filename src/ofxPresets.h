@@ -416,7 +416,7 @@ void ofxPresets::updateParameters() {
 
         for (auto& [key, targetValue] : interpolationData.targetValues) {
             float startValue = currentParameterValues[group][key];
-            float interpolatedValue = ofxeasing::map_clamp(t, 0.0f, 1.0f, startValue, targetValue, &ofxeasing::linear::easeNone);
+            float interpolatedValue = ofxeasing::map_clamp(t, 0.0f, 1.0f, startValue, targetValue, &ofxeasing::linear::easeInOut);
 
             for (auto& paramGroup : *params) {
                 if (paramGroup->groupName == group) {
