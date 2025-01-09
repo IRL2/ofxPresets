@@ -70,6 +70,9 @@ private:
     void onTransitionFinished();
     void onSequenceFinished();
 
+    void updateParameters();
+    void updateSequence();
+    void advanceSequenceIndex();
 
 public:
     void setup(std::vector<ofxPresetsParametersBase*>& parameters);
@@ -80,16 +83,14 @@ public:
     void deletePreset(int id);
     void clonePresetTo(int from, int to);
 
-    void updateParameters();
-    void updateSequence();
-
     void loadSequence(const std::string& sequenceString);
     void playSequence(float sequenceDuration, float transitionDuration);
     void stopSequence();
+    void stopInterpolating();
+    void stop();
 
 	ofParameter<std::vector<int>> sequence;
     int getCurrentPreset();
-    void updateSequenceIndex();
 
     bool isInterpolating() { return !interpolationDataMap.empty(); } // for when parameters are being interpolated
     bool isPlayingSequence() { return isPlaying; }
@@ -369,39 +370,34 @@ void ofxPresets::updateParameters() {
     float currentTime = ofGetElapsedTimef();
 
     for (auto& [group, interpolationData] : interpolationDataMap) {
-        //const std::string& groupName = paramGroup->groupName;
+        float elapsedTime = currentTime - interpolationData.startTime;
+        float t = std::min(elapsedTime / interpolationData.duration, 1.0f);
 
-        //if (interpolationDataMap.find(groupName) != interpolationDataMap.end()) {
-            //InterpolationData& interpolationData = interpolationDataMap[groupName];
-            float elapsedTime = currentTime - interpolationData.startTime;
-            float t = std::min(elapsedTime / interpolationData.duration, 1.0f);
+        for (auto& [key, targetValue] : interpolationData.targetValues) {
+            float startValue = currentParameterValues[group][key];
+            float interpolatedValue = ofxeasing::map_clamp(t, 0.0f, 1.0f, startValue, targetValue, &ofxeasing::linear::easeNone);
 
-            for (auto& [key, targetValue] : interpolationData.targetValues) {
-                float startValue = currentParameterValues[group][key];
-                float interpolatedValue = ofxeasing::map_clamp(t, 0.0f, 1.0f, startValue, targetValue, &ofxeasing::linear::easeNone);
-
-                for (auto& paramGroup : *params) {
-                    if (paramGroup->groupName == group) {
-                        auto param = paramGroup->parameterMap[key];
-                        const std::string paramTypeName = typeid(*param).name();
-                        if (paramTypeName == typeid(ofParameter<int>).name()) {
-                            dynamic_cast<ofParameter<int>*>(param)->set(static_cast<int>(interpolatedValue));
-                        }
-                        else if (paramTypeName == typeid(ofParameter<float>).name()) {
-                            dynamic_cast<ofParameter<float>*>(param)->set(interpolatedValue);
-                        }
+            for (auto& paramGroup : *params) {
+                if (paramGroup->groupName == group) {
+                    auto param = paramGroup->parameterMap[key];
+                    const std::string paramTypeName = typeid(*param).name();
+                    if (paramTypeName == typeid(ofParameter<int>).name()) {
+                        dynamic_cast<ofParameter<int>*>(param)->set(static_cast<int>(interpolatedValue));
+                    }
+                    else if (paramTypeName == typeid(ofParameter<float>).name()) {
+                        dynamic_cast<ofParameter<float>*>(param)->set(interpolatedValue);
                     }
                 }
             }
+        }
 
-            if (t >= 1.0f) { // it means (currentTime - interpolationData.startTime >= interpolationData.duration)
-                interpolationDataMap.erase(group);
-                if (interpolationDataMap.empty()) {
-					onTransitionFinished();
-                    break;
-                }
+        if (t >= 1.0f) { // it means (currentTime - interpolationData.startTime >= interpolationData.duration)
+            interpolationDataMap.erase(group);
+            if (interpolationDataMap.empty()) {
+				onTransitionFinished();
+                break;
             }
-        //}
+        }
     }
 }
 
@@ -442,19 +438,26 @@ void ofxPresets::loadSequence(const std::string& seqString) {
     ofLog() << "ofxPresets::loadSequence:: Sequence loaded " << ofToString(sequence.get());
 }
 
+/// <summary>
+/// Starts playing the loaded sequence
+/// </summary>
+/// <param name="presetDuration"></param>
+/// <param name="transitionDuration"></param>
 void ofxPresets::playSequence(float presetDuration = DEFAULT_SEQUENCE_PRESET_DURATION, float transitionDuration = DEFAULT_SEQUENCE_TRANSITION_DURATION) {
-    ofLogNotice("ofxPresets::playSequence") << "Playing sequence index " << sequenceIndex << ": preset " << sequence.get()[sequenceIndex] << " for " << presetDuration << "s and interpolating " << transitionDuration << "s";
+    ofLogNotice("ofxPresets::playSequence") << "Playing the loaded sequence with transition and preset durations: " << transitionDuration<< ", " << presetDuration;
     this->sequencePresetDuration = presetDuration;
     this->sequenceTransitionDuration = transitionDuration;
     this->isPlaying = true;
+
+	// > to ensure the first preset is applied immediately (not waiting for the presetDuration to happen)
+	this->isTransitioning = false;
+	this->lastUpdateTime = ofGetElapsedTimef() - presetDuration;
+	this->sequenceIndex = 0;
 
     if (sequence.get().size() == 0) {
         ofLogVerbose() << "ofxPresets::playSequence:: No sequence to play";
         return;
     }
-
-    ofLog() << "ofxPresets::playSequence:: Playing preset " << ofToString(sequence.get()[sequenceIndex]);
-    applyPreset(sequence.get()[sequenceIndex], sequenceTransitionDuration);
 }
 
 
@@ -462,18 +465,38 @@ void ofxPresets::playSequence(float presetDuration = DEFAULT_SEQUENCE_PRESET_DUR
 /// Stops the running sequence
 /// </summary>
 void ofxPresets::stopSequence() {
-    ofLog() << "ofxPresets::stopSequence:: Stopping sequence";
+    ofLog(OF_LOG_VERBOSE) << "ofxPresets::stopSequence:: Stopping sequence";
     this->isPlaying = false;
     sequenceIndex = 0;
 }
 
+/// <summary>
+/// Stops the running interpolation
+/// </summary>
+void ofxPresets::stopInterpolating() {
+    ofLog(OF_LOG_VERBOSE) << "ofxPresets::stopSequence:: Stopping interpolation";
+    interpolationDataMap.clear();
+}
 
-// TODO: Better use events
+/// <summary>
+/// Stops the running sequence and interpolation
+/// </summary>
+void ofxPresets::stop() {
+    stopInterpolating();
+    stopSequence();
+}
+
+
+/// <summary>
+/// Update interpolations and sequence
+/// </summary>
 void ofxPresets::update() {
     updateParameters();
     updateSequence();
 }
 
+
+// Update the sequencer
 void ofxPresets::updateSequence() {
     if (isPlayingSequence()) {
         float currentTime = ofGetElapsedTimef();
@@ -487,8 +510,8 @@ void ofxPresets::updateSequence() {
         else {
             if (currentTime - lastUpdateTime >= sequencePresetDuration) {
                 lastUpdateTime = currentTime;
-                playSequence();
-                updateSequenceIndex();
+                applyPreset(sequence.get()[sequenceIndex], sequenceTransitionDuration);
+                advanceSequenceIndex();
                 isTransitioning = true;
                 onPresetFinished();
             }
@@ -501,7 +524,7 @@ void ofxPresets::updateSequence() {
 /// <summary>
 /// Move to the next step in the sequence. Restart if the end is reached
 /// </summary>
-void ofxPresets::updateSequenceIndex() {
+void ofxPresets::advanceSequenceIndex() {
     sequenceIndex++;
     if (sequenceIndex >= sequence.get().size()) {
         sequenceIndex = 0;
