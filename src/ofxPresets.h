@@ -59,12 +59,14 @@ private:
     std::unordered_map<std::string, InterpolationData> interpolationDataMap;
     std::unordered_map<std::string, std::unordered_map<std::string, float>> currentParameterValues;
     void storeCurrentValues();
+    int getRandomPreset(int lowerPreset, int higherPreset);
 
     std::vector<ofxPresetsParametersBase*>* params; // local reference to the parameters
 
     std::vector<int> parseSequence(std::string& input);
     std::vector<std::string> splitString(const std::string& str, char delimiter) const;
     std::vector<int> unfoldRanges(std::string& str);
+    std::vector<int> unfoldRandomRange(std::vector<std::string> randomRange);
 
     void onPresetFinished();
     void onTransitionFinished();
@@ -120,12 +122,12 @@ void ofxPresets::setup(std::vector<ofxPresetsParametersBase*>& parameters) {
 /// </summary>
 /// <param name="jsonFilePath">Full path to the json file</param>
 void ofxPresets::applyJsonToParameters(const std::string& jsonFilePath, float interpolationDuration) {
-    ofLog() << "ofxPresets::applyJsonToParameters:: Applying JSON to parameters from " << jsonFilePath;
+    ofLog(OF_LOG_NOTICE) << "ofxPresets::applyJsonToParameters:: Applying preset to parameters from " << jsonFilePath;
 
     // Read the JSON file
     std::ifstream file(jsonFilePath);
     if (!file.is_open()) {
-        ofLogError() << "Could not open JSON file";
+        ofLogError("ofxPresets::applyJsonToParameters") << "Could not open JSON file";
         return;
     }
 
@@ -154,7 +156,7 @@ void ofxPresets::applyJsonToParameters(const std::string& jsonFilePath, float in
                     // store actual param key and value
                     auto param = paramGroup->parameterMap[key];
                     if (param == nullptr) {
-                        ofLog() << "Preset key " << key << " not found in " << group;
+                        ofLog(OF_LOG_VERBOSE) << "ofxPresets::applyJsonToParameters::" << "Preset key " << key << " not found in " << group;
                         continue;
                     }
 
@@ -180,7 +182,7 @@ void ofxPresets::applyJsonToParameters(const std::string& jsonFilePath, float in
                         }
                     }
                     catch (const std::exception& e) {
-                        ofLogError() << "Error applying value for key " << key << ": " << e.what();
+                        ofLogError("ofxPresets::applyJsonToParameters") << "Error applying value for key " << key << ": " << e.what();
                     }
                 }
 
@@ -198,6 +200,10 @@ void ofxPresets::applyJsonToParameters(const std::string& jsonFilePath, float in
 /// <param name="parameterGroups"></param>
 /// <param name="duration">interpolation diration</param>
 void ofxPresets::applyPreset(int id, float duration = DEFAULT_INTERPOLATION_DURATION) {
+	if (id == -1) {
+        id = getRandomPreset(1, 16);
+	}
+
     std::string jsonFilePath = convertIDtoJSonFilename(id);
     if (fileExist(jsonFilePath)) {
         applyJsonToParameters(jsonFilePath, duration);
@@ -205,6 +211,27 @@ void ofxPresets::applyPreset(int id, float duration = DEFAULT_INTERPOLATION_DURA
     else {
         ofLog() << "ofxPresets::applyPreset:: No json file for preset " << id << " on " << jsonFilePath;
     }
+}
+
+/// <summary>
+/// Find a valid random preset by looking for an existant json file
+/// </summary>
+/// <returns>After higherPreset^2 unlucky attempts, returns lowerPreset </returns>
+int ofxPresets::getRandomPreset(int lowerPreset = 1, int higherPreset = 10) {
+    int id = ofRandom(lowerPreset, higherPreset);
+	int exitCounter = higherPreset * higherPreset;
+
+    while (!presetExist(id) && exitCounter-- > 0) {
+		id = ofRandom(lowerPreset, higherPreset);
+	}
+
+    if (exitCounter <= 0) {
+        ofLogError("ofxPresets::getRandomPreset") << "Could not find valid random preset file";
+        id = lowerPreset;
+    }
+
+	ofLog(OF_LOG_VERBOSE) << "ofxPresets::getRandomPreset:: Getting random preset " << id;
+    return id;
 }
 
 
@@ -565,7 +592,7 @@ void ofxPresets::onSequenceFinished() {
 /// <returns></returns>
 int ofxPresets::getCurrentPreset() {
     if (sequence.get().size() > 0 && sequenceIndex <= sequence.get().size()) {
-		if (sequence.get()[sequenceIndex] >= 0)
+        if (sequence.get()[sequenceIndex] >= 0)
             return sequence.get()[sequenceIndex];
     }
     return -1;
@@ -579,8 +606,10 @@ int ofxPresets::getCurrentPreset() {
 
 /// <summary>
 /// Parse an string sequence into a vector of integers
+/// example: "1, 2, 3 - 6, 2" turns into [1, 2, 3, 4, 5, 6, 2]
+/// example: "1, ? - 3, 2, ?" turns into [1, -1, -1, -1, 2, -1]
 /// </summary>
-/// <param name="input">example: 1, 2, 3 - 6, 2</param>
+/// <param name="input">allows: Numbers, commas, dashes and question mark</param>
 std::vector<int> ofxPresets::parseSequence(std::string& input) {
     std::vector<int> s;
 
@@ -597,6 +626,10 @@ std::vector<int> ofxPresets::parseSequence(std::string& input) {
             for (auto& i : sr) {
                 s.push_back(i);
             }
+		}
+
+        else if (token.find('?') != std::string::npos) {
+            s.push_back(-1);
         }
 
         // Handle single numbers
@@ -626,23 +659,36 @@ std::vector<std::string> ofxPresets::splitString(const std::string& str, char de
 
 /// <summary>
 /// Convert a "1-5" string into a vector of integers {1, 2, 3, 4, 5}
+/// Using ?-N produces N times a random preset. i.e. "?-3" = {-1, -1, -1}
 /// </summary>
 std::vector<int> ofxPresets::unfoldRanges(std::string& str) {
     std::vector<int> sr;
+    int start = 1;
+    int end = 1;
 
     auto rangeParts = splitString(str, '-');
 
     if (rangeParts.size() == 2) {
-        int start = std::stoi(rangeParts[0]);
-        int end = std::stoi(rangeParts[1]);
+
+		// handle random presets
+        if (rangeParts[0].find('?') != std::string::npos || rangeParts[0].find('?') != std::string::npos) {
+			return unfoldRandomRange(rangeParts);
+        }
+
+        // regular range
+        start = std::stoi(rangeParts[0]);
+        end = std::stoi(rangeParts[1]);
 
         // Handle reversed ranges
         if (start > end) {
             std::swap(start, end);
         }
+        
         for (int i = start; i <= end; ++i) {
             sr.push_back(i);
         }
+
+        // Reverse back the reversed ranges
         if (std::stoi(rangeParts[0]) > std::stoi(rangeParts[1])) {
             std::reverse(sr.begin(), sr.end());
         }
@@ -651,15 +697,45 @@ std::vector<int> ofxPresets::unfoldRanges(std::string& str) {
     return sr;
 }
 
+
+
 /// <summary>
-/// Removes invalid characters but digits, comma and dashes
+/// Convert a range with ? into a vector of N times -1
+/// i.e. "?-3" = {-1, -1, -1}
+/// i.e. "3-?" = {-1, -1, -1}
+/// i.e. "?-?" = {-1}
+/// </summary>
+std::vector<int> ofxPresets::unfoldRandomRange(std::vector<std::string> randomRange) {
+    std::vector<int> sr;
+
+    bool firstIsRandom = randomRange[0].find('?') != std::string::npos;
+    bool secondIsRandom = randomRange[1].find('?') != std::string::npos;
+
+    // when both are random, return a single -1
+    if (firstIsRandom && secondIsRandom) {
+        randomRange[1] = "1";
+    }
+    // fill a range with N random presets
+    if (firstIsRandom || secondIsRandom) {
+        int rep = firstIsRandom ? std::stoi(randomRange[1]) : std::stoi(randomRange[0]);
+        for (int i = 1; i <= rep; ++i) {
+            sr.push_back(-1);
+        }
+    }
+
+    return sr;
+}
+
+
+/// <summary>
+/// Removes invalid characters but digits, comma, dash and question mark
 /// </summary>
 /// <param name="input"></param>
 /// <returns></returns>
 std::string ofxPresets::removeInvalidCharacters(const std::string& input) {
     std::string result;
     std::copy_if(input.begin(), input.end(), std::back_inserter(result), [](char c) {
-        return std::isdigit(c) || c == ',' || c == '-';
+        return std::isdigit(c) || c == ',' || c == '-' || c == '?';
         });
     return result;
 }
