@@ -26,6 +26,7 @@
 const std::string DEFAULT_FOLDER_PATH = "data\\";
 const float DEFAULT_SEQUENCE_PRESET_DURATION = 5.0f;
 const float DEFAULT_INTERPOLATION_DURATION = 3.0f;
+const float DEFAULT_MUTATION_PERCENTAGE = 0.1f;
 const int MAX_RANDOM_PRESET = 16;
 
 
@@ -92,7 +93,10 @@ public:
     void stopInterpolating();
     void stop();
 
+    void mutate();
     void mutate(float percentage);
+
+    void mutateFromPreset(int id, float percentage);
 
 	ofParameter<std::vector<int>> sequence;
     int getCurrentPreset();
@@ -106,6 +110,7 @@ public:
 
     ofParameter<float> sequencePresetDuration = DEFAULT_SEQUENCE_PRESET_DURATION;
     ofParameter<float> interpolationDuration = DEFAULT_INTERPOLATION_DURATION;
+    ofParameter<float> mutationPercentage = DEFAULT_MUTATION_PERCENTAGE;
 
     ofEvent<void> sequencePresetFinished;
     ofEvent<void> transitionFinished;
@@ -235,8 +240,26 @@ void ofxPresets::storeCurrentValues() {
 }
 
 
-void ofxPresets::mutate(float percentage = 0.1f) {
-	percentage = std::clamp(percentage/2, 0.0f, 1.0f);
+
+
+/// <summary>
+/// Mutate the parameters with a random value within the min and max range
+/// Uses the global mutationPercentage (Default 0.1)
+/// </summary>
+void ofxPresets::mutate(){
+	mutate(mutationPercentage);
+}
+
+
+/// <summary>
+/// Mutate the parameters with a random value within the min and max range
+/// </summary>
+/// <param name="percentage">This will modify the public mutationPercentage</param>
+void ofxPresets::mutate(float percentage) {
+	ofLog(OF_LOG_VERBOSE) << "ofxPresets::mutate:: Mutating current parameter values with percentage " << percentage;
+
+	//percentage = std::clamp(percentage/2, 0.0f, 1.0f);
+	mutationPercentage.set(percentage);
 
     storeCurrentValues(); // Store current values as a reference
 
@@ -268,8 +291,8 @@ void ofxPresets::mutate(float percentage = 0.1f) {
 
                 // Calculate the random mutation
                 float range = maxValue - minValue;
-                float mutation = ofRandom(-percentage, percentage) * range;
-                float mutatedValue = currentValue + mutation;
+                float mutation = ofRandomGaussian(0.0f, percentage / 4) * range;
+				float mutatedValue = currentValue + mutation;  // mutation does use the current value
 
                 // Clamp the mutated value within the min and max range
                 mutatedValue = std::clamp(mutatedValue, minValue, maxValue);
@@ -281,6 +304,71 @@ void ofxPresets::mutate(float percentage = 0.1f) {
         interpolationDataMap[paramGroup->groupName] = interpolationData;
     }
 	// No need to start the interpolation, it will be done on the next update, since InterpolationDataMap is not empty
+}
+
+
+/// <summary>
+/// Take an existent preset and mutate the values
+/// </summary>
+/// <param name="id"></param>
+/// <param name="percentage"></param>
+void ofxPresets::mutateFromPreset(int id, float percentage) {
+    ofLog() << "ofxPresets::mutateFromPreset:: About to mutate values from the preset " << -id;
+
+    std::string jsonFilePath = convertIDtoJSonFilename(-id);
+    if (!fileExist(jsonFilePath)) {
+        ofLogError("ofxPresets::mutateFromPreset") << "Preset file does not exist for ID: " << id;
+        return;
+    }
+
+    // Apply the preset without interpolation
+    applyJsonToParameters(jsonFilePath, interpolationDuration);
+
+    // Store current values as a reference
+    storeCurrentValues();
+
+    // Mutate the parameters with the given percentage
+    mutationPercentage.set(percentage);
+
+	// TODO: this is repeated from the mutate() BUT using different source, should be a common function
+    for (auto& [group, interpolationData] : interpolationDataMap) {
+        for (auto& [key, targetValue] : interpolationData.targetValues) {
+            float currentValue = currentParameterValues[group][key];
+            float minValue = 0.0f;
+            float maxValue = 0.0f;
+
+            // Determine the parameter type and get min/max values
+            for (auto& paramGroup : *params) {
+                if (paramGroup->groupName == group) {
+                    auto param = paramGroup->parameterMap[key];
+                    if (param) {
+                        const std::string paramTypeName = typeid(*param).name();
+                        if (paramTypeName == typeid(ofParameter<int>).name()) {
+                            auto intParam = dynamic_cast<ofParameter<int>*>(param);
+                            minValue = intParam->getMin();
+                            maxValue = intParam->getMax();
+                        }
+                        else if (paramTypeName == typeid(ofParameter<float>).name()) {
+                            auto floatParam = dynamic_cast<ofParameter<float>*>(param);
+                            minValue = floatParam->getMin();
+                            maxValue = floatParam->getMax();
+                        }
+                    }
+                }
+            }
+
+            // Calculate the random mutation
+            float range = maxValue - minValue;
+            float mutation = ofRandomGaussian(0.0f, percentage / 4) * range;
+			float mutatedValue = targetValue + mutation; // mutationFromPreset does use the target value instead of the current
+
+            // Clamp the mutated value within the min and max range
+            mutatedValue = std::clamp(mutatedValue, minValue, maxValue);
+
+            // Update the target value with the mutated value
+            interpolationData.targetValues[key] = mutatedValue;
+        }
+    }
 }
 
 
@@ -310,10 +398,20 @@ void ofxPresets::applyPreset(int id) {
 /// <param name="parameterGroups"></param>
 /// <param name="duration">This will update the global interpolationDuration</param>
 void ofxPresets::applyPreset(int id, float duration) {
-	if (id == -1) {
+
+    // mutation
+    if (id < 0) {
+        mutateFromPreset(id, mutationPercentage);
+        lastAppliedPreset = id;
+        return;
+    }
+
+    // random preset
+    if (id == 0) {
         id = getRandomPreset(1, MAX_RANDOM_PRESET);
 	}
 
+	// apply preset
     std::string jsonFilePath = convertIDtoJSonFilename(id);
     if (fileExist(jsonFilePath)) {
         applyJsonToParameters(jsonFilePath, duration);
@@ -348,13 +446,13 @@ int ofxPresets::getRandomPreset(int lowerPreset = 1, int higherPreset = 10) {
 
 /// <summary>
 /// Returns the current preset item in the sequence
-/// Will report the actual preset when -1 (random) is found
+/// Will report the actual preset when 0 (random) is found
 /// </summary>
 /// <returns></returns>
 int ofxPresets::getCurrentPreset() {
     return lastAppliedPreset;
 
-    // TODO: Should be enough to return lastAppliedPreset, but need more testing if need to report the -1
+    // TODO: Should be enough to return lastAppliedPreset, but need more testing if need to report the 0
     //if (sequence.get().size() > 0 && sequenceIndex <= sequence.get().size()) {
     //    if (sequence.get()[sequenceIndex] >= 0)
     //        return sequence.get()[sequenceIndex];
@@ -730,7 +828,7 @@ void ofxPresets::onSequenceFinished() {
 /// <summary>
 /// Parse an string sequence into a vector of integers
 /// example: "1, 2, 3 - 6, 2" turns into [1, 2, 3, 4, 5, 6, 2]
-/// example: "1, ? - 3, 2, ?" turns into [1, -1, -1, -1, 2, -1]
+/// example: "1, ? - 3, 2, ?" turns into [1, 0, 0, 0, 2, 0]
 /// </summary>
 /// <param name="input">allows: Numbers, commas, dashes and question mark</param>
 std::vector<int> ofxPresets::parseSequence(std::string& input) {
@@ -741,6 +839,8 @@ std::vector<int> ofxPresets::parseSequence(std::string& input) {
     std::istringstream stream(input);
     std::string token;
 
+    // TODO: Better use regex to validate and organize parsing each section
+
     while (std::getline(stream, token, ',')) {
 
         // Handle ranges
@@ -749,10 +849,24 @@ std::vector<int> ofxPresets::parseSequence(std::string& input) {
             for (auto& i : sr) {
                 s.push_back(i);
             }
-		}
+        }
 
+        // Handle random presets
         else if (token.find('?') != std::string::npos) {
-            s.push_back(-1);
+            s.push_back(0);
+        }
+
+        // Handle mutation
+        else if (token.find('*') != std::string::npos) {
+            int mutationPreset;
+            if (token.find('*') == 0) {
+				mutationPreset = std::stoi(token.substr(1, token.length()-1));
+            }
+            else {
+				mutationPreset = std::stoi(token.substr(0, token.find('*')));
+            }
+            //mutationPreset = std::stoi(token.substr(1));
+            s.push_back(-mutationPreset);
         }
 
         // Handle single numbers
@@ -782,7 +896,7 @@ std::vector<std::string> ofxPresets::splitString(const std::string& str, char de
 
 /// <summary>
 /// Convert a "1-5" string into a vector of integers {1, 2, 3, 4, 5}
-/// Using ?-N produces N times a random preset. i.e. "?-3" = {-1, -1, -1}
+/// Using ?-N produces N times a random preset. i.e. "?-3" = {0, 0, 0}
 /// </summary>
 std::vector<int> ofxPresets::unfoldRanges(std::string& str) {
     std::vector<int> sr;
@@ -823,10 +937,10 @@ std::vector<int> ofxPresets::unfoldRanges(std::string& str) {
 
 
 /// <summary>
-/// Convert a range with ? into a vector of N times -1
-/// i.e. "?-3" = {-1, -1, -1}
-/// i.e. "3-?" = {-1, -1, -1}
-/// i.e. "?-?" = {-1}
+/// Convert a range with ? into a vector of N times 0
+/// i.e. "?-3" = {0, 0, 0}
+/// i.e. "3-?" = {0, 0, 0}
+/// i.e. "?-?" = {0}
 /// </summary>
 std::vector<int> ofxPresets::unfoldRandomRange(std::vector<std::string> randomRange) {
     std::vector<int> sr;
@@ -834,7 +948,7 @@ std::vector<int> ofxPresets::unfoldRandomRange(std::vector<std::string> randomRa
     bool firstIsRandom = randomRange[0].find('?') != std::string::npos;
     bool secondIsRandom = randomRange[1].find('?') != std::string::npos;
 
-    // when both are random, return a single -1
+    // when both are random, return a single 0
     if (firstIsRandom && secondIsRandom) {
         randomRange[1] = "1";
     }
@@ -842,7 +956,7 @@ std::vector<int> ofxPresets::unfoldRandomRange(std::vector<std::string> randomRa
     if (firstIsRandom || secondIsRandom) {
         int rep = firstIsRandom ? std::stoi(randomRange[1]) : std::stoi(randomRange[0]);
         for (int i = 1; i <= rep; ++i) {
-            sr.push_back(-1);
+            sr.push_back(0);
         }
     }
 

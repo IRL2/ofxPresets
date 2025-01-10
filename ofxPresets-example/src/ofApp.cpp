@@ -25,6 +25,8 @@ ofxPresets manager;
 ofxPanel gui;
 ofxLabel currPreset;
 ofxLabel instructions;
+ofxLabel internalSequence;
+ofParameter<std::string> sequenceInput;
 
 //--------------------------------------------------------------
 void ofApp::setup(){
@@ -33,30 +35,34 @@ void ofApp::setup(){
 	allParameters = { &p };
 	manager.setup( allParameters );
 
-	p.x = ofGetWidth() / 2;
-	p.y = ofGetHeight() / 2;
+	p.x.set("x pos", ofGetWidth() / 2, 0, ofGetWidth());
+	p.y.set("y pos", ofGetHeight() / 2, 0, ofGetHeight());
 	p.radius = 50;
 
 	ofAddListener(manager.transitionFinished, this, &ofApp::onPresetChanged);
 
 	gui.setup();
+	gui.setWidthElements(300);
 	gui.add(manager.interpolationDuration.set("Transition duration", 0.5f, 0.0f, 20.0f));
 	gui.add(manager.sequencePresetDuration.set("Preset duration", 0.5f, 0.0f, 20.0f));
-	//gui.add()
+	gui.add(sequenceInput.set("Sequence", "1, 2*, ?-3, 8"));
 	gui.add(currPreset.setup("Current preset", ""));
-	gui.add(instructions.setup("Press 1-9 to apply a preset\n<Shift> 1-9 to save into a preset\nS to start a sequence\nC to stop the sequence", ""));
+	gui.add(internalSequence.setup("Internal seq", ""));
 }
 
 //--------------------------------------------------------------
 void ofApp::update(){
 	manager.update();
 	currPreset = ofToString(manager.getCurrentPreset());
+	internalSequence = ofToString(manager.sequence.get());
 }
 
 //--------------------------------------------------------------
 void ofApp::draw(){
 	ofDrawCircle(p.x, p.y, p.radius);
 	gui.draw();
+
+	ofDrawBitmapStringHighlight("Press 1-9 to apply a preset\n<Shift> 1-9 to save into a preset\nS to start a sequence\nC to stop the sequence\nM to mutate", ofGetWidth() - 280, 38);
 }
 
 //--------------------------------------------------------------
@@ -73,12 +79,16 @@ void ofApp::keyReleased(ofKeyEventArgs& e) {
 	}
 
 	if (e.keycode == 'S') {
-		manager.loadSequence("1, 2, ?-5, 8");
+		manager.loadSequence(ofToString(sequenceInput.get()));
 		manager.playSequence();
 	}
 
 	if (e.keycode == 'C') {
 		manager.stop();
+	}
+
+	if (e.keycode == 'M') {
+		manager.mutate();
 	}
 }
 
