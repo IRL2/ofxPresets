@@ -92,6 +92,8 @@ public:
     void stopInterpolating();
     void stop();
 
+    void mutate(float percentage);
+
 	ofParameter<std::vector<int>> sequence;
     int getCurrentPreset();
 
@@ -233,6 +235,53 @@ void ofxPresets::storeCurrentValues() {
 }
 
 
+void ofxPresets::mutate(float percentage = 0.1f) {
+	percentage = std::clamp(percentage/2, 0.0f, 1.0f);
+
+    storeCurrentValues(); // Store current values as a reference
+
+    interpolationDataMap.clear(); // Clear any existing interpolation data
+
+    for (auto& paramGroup : *params) {
+        InterpolationData interpolationData;
+        interpolationData.startTime = ofGetElapsedTimef();
+
+        for (auto& [key, param] : paramGroup->parameterMap) {
+            if (param) { // Check if the parameter is not null
+                const std::string paramTypeName = typeid(*param).name();
+                float currentValue = 0.0f;
+                float minValue = 0.0f;
+                float maxValue = 0.0f;
+
+                if (paramTypeName == typeid(ofParameter<int>).name()) {
+                    auto intParam = dynamic_cast<ofParameter<int>*>(param);
+                    currentValue = intParam->get();
+                    minValue = intParam->getMin();
+                    maxValue = intParam->getMax();
+                }
+                else if (paramTypeName == typeid(ofParameter<float>).name()) {
+                    auto floatParam = dynamic_cast<ofParameter<float>*>(param);
+                    currentValue = floatParam->get();
+                    minValue = floatParam->getMin();
+                    maxValue = floatParam->getMax();
+                }
+
+                // Calculate the random mutation
+                float range = maxValue - minValue;
+                float mutation = ofRandom(-percentage, percentage) * range;
+                float mutatedValue = currentValue + mutation;
+
+                // Clamp the mutated value within the min and max range
+                mutatedValue = std::clamp(mutatedValue, minValue, maxValue);
+
+                interpolationData.targetValues[key] = mutatedValue;
+            }
+        }
+
+        interpolationDataMap[paramGroup->groupName] = interpolationData;
+    }
+	// No need to start the interpolation, it will be done on the next update, since InterpolationDataMap is not empty
+}
 
 
 
@@ -802,14 +851,14 @@ std::vector<int> ofxPresets::unfoldRandomRange(std::vector<std::string> randomRa
 
 
 /// <summary>
-/// Removes invalid characters but digits, comma, dash and question mark
+/// Removes invalid characters but digits, comma, dash, question mark, star
 /// </summary>
 /// <param name="input"></param>
 /// <returns></returns>
 std::string ofxPresets::removeInvalidCharacters(const std::string& input) {
     std::string result;
     std::copy_if(input.begin(), input.end(), std::back_inserter(result), [](char c) {
-        return std::isdigit(c) || c == ',' || c == '-' || c == '?';
+        return std::isdigit(c) || c == ',' || c == '-' || c == '?' || c == '*';
         });
     return result;
 }
