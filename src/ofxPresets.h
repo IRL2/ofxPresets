@@ -120,6 +120,18 @@ void ofxPresets::setup(std::vector<ofxPresetsParametersBase*>& parameters) {
 }
 
 
+/// <summary>
+/// Update interpolations and sequence
+/// </summary>
+void ofxPresets::update() {
+    updateParameters();
+    updateSequence();
+}
+
+
+
+#pragma region ParameterHandling
+
 
 /// <summary>
 /// Apply the values from a JSON file to the parameters
@@ -197,6 +209,42 @@ void ofxPresets::applyJsonToParameters(const std::string& jsonFilePath, float du
     }
 }
 
+
+
+/// <summary>
+/// Save the current values of the parameters to use them as a reference for interpolation
+/// </summary>
+void ofxPresets::storeCurrentValues() {
+    for (auto& paramGroup : *params) {
+        std::unordered_map<std::string, float> groupValues;
+        for (auto& [key, param] : paramGroup->parameterMap) {
+            if (param) { // Check if the parameter is not null
+                const std::string paramTypeName = typeid(*param).name();
+                if (paramTypeName == typeid(ofParameter<int>).name()) {
+                    groupValues[key] = dynamic_cast<ofParameter<int>*>(param)->get();
+                }
+                else if (paramTypeName == typeid(ofParameter<float>).name()) {
+                    groupValues[key] = dynamic_cast<ofParameter<float>*>(param)->get();
+                }
+            }
+        }
+        currentParameterValues[paramGroup->groupName] = groupValues;
+    }
+}
+
+
+
+
+
+#pragma endregion
+
+
+
+
+
+
+
+
 /// <summary>
 /// Apply a preset to the parameters
 /// Uses the global interpolation duration
@@ -250,25 +298,41 @@ int ofxPresets::getRandomPreset(int lowerPreset = 1, int higherPreset = 10) {
 
 
 /// <summary>
-/// Save the current values of the parameters to use them as a reference for interpolation
+/// Returns the current preset item in the sequence
+/// Will report the actual preset when -1 (random) is found
 /// </summary>
-void ofxPresets::storeCurrentValues() {
-    for (auto& paramGroup : *params) {
-        std::unordered_map<std::string, float> groupValues;
-        for (auto& [key, param] : paramGroup->parameterMap) {
-            if (param) { // Check if the parameter is not null
-                const std::string paramTypeName = typeid(*param).name();
-                if (paramTypeName == typeid(ofParameter<int>).name()) {
-                    groupValues[key] = dynamic_cast<ofParameter<int>*>(param)->get();
-                }
-                else if (paramTypeName == typeid(ofParameter<float>).name()) {
-                    groupValues[key] = dynamic_cast<ofParameter<float>*>(param)->get();
-                }
-            }
-        }
-        currentParameterValues[paramGroup->groupName] = groupValues;
-    }
+/// <returns></returns>
+int ofxPresets::getCurrentPreset() {
+    return lastAppliedPreset;
+
+    // TODO: Should be enough to return lastAppliedPreset, but need more testing if need to report the -1
+    //if (sequence.get().size() > 0 && sequenceIndex <= sequence.get().size()) {
+    //    if (sequence.get()[sequenceIndex] >= 0)
+    //        return sequence.get()[sequenceIndex];
+    //}
+    //else {
+    //    return lastAppliedPreset;
+    //}
+    //return 0;
 }
+
+
+/// <summary>
+/// Stops the running interpolation
+/// </summary>
+void ofxPresets::stopInterpolating() {
+    ofLog(OF_LOG_VERBOSE) << "ofxPresets::stopSequence:: Stopping interpolation";
+    interpolationDataMap.clear();
+}
+
+/// <summary>
+/// Stops the running sequence and interpolation
+/// </summary>
+void ofxPresets::stop() {
+    stopInterpolating();
+    stopSequence();
+}
+
 
 
 /// <summary>
@@ -280,6 +344,10 @@ void ofxPresets::savePreset(int id) {
     std::string jsonFilePath = convertIDtoJSonFilename(id);
     saveParametersToJson(jsonFilePath);
 }
+
+
+
+#pragma region FileHandling
 
 
 /// <summary>
@@ -345,6 +413,33 @@ void ofxPresets::deletePreset(int id) {
     //	ofLog() << "ofxPresets::deletePreset:: No json file for preset " << idStr;
     //}
 }
+
+
+
+
+/// <summary>
+/// Clone a preset to another preset
+/// </summary>
+void ofxPresets::clonePresetTo(int from, int to) {
+    std::string fromJsonFilePath = convertIDtoJSonFilename(from);
+    std::string toJsonFilePath = convertIDtoJSonFilename(to);
+
+    if (fileExist(fromJsonFilePath)) {
+        ofLog() << "ofxPresets::clonePresetTo:: Cloning preset " << from << " to " << to;
+        std::ifstream src(fromJsonFilePath, std::ios::binary);
+        std::ofstream dst(toJsonFilePath, std::ios::binary);
+        dst << src.rdbuf();
+        dst.close();
+    }
+    else {
+        ofLog() << "ofxPresets::clonePresetTo:: No json file for source preset " << from << ". Looking for " << toJsonFilePath;
+    }
+}
+
+
+
+#pragma endregion
+
 
 
 /// <summary>
@@ -446,24 +541,8 @@ void ofxPresets::updateParameters() {
 
 
 
-/// <summary>
-/// Clone a preset to another preset
-/// </summary>
-void ofxPresets::clonePresetTo(int from, int to) {
-	std::string fromJsonFilePath = convertIDtoJSonFilename(from);
-    std::string toJsonFilePath = convertIDtoJSonFilename(to);
 
-    if (fileExist(fromJsonFilePath)) {
-        ofLog() << "ofxPresets::clonePresetTo:: Cloning preset " << from << " to " << to;
-        std::ifstream src(fromJsonFilePath, std::ios::binary);
-        std::ofstream dst(toJsonFilePath, std::ios::binary);
-        dst << src.rdbuf();
-        dst.close();
-    }
-    else {
-        ofLog() << "ofxPresets::clonePresetTo:: No json file for source preset " << from << ". Looking for " << toJsonFilePath;
-    }
-}
+#pragma region Sequencer
 
 
 /// <summary>
@@ -521,30 +600,6 @@ void ofxPresets::stopSequence() {
     sequenceIndex = 0;
 }
 
-/// <summary>
-/// Stops the running interpolation
-/// </summary>
-void ofxPresets::stopInterpolating() {
-    ofLog(OF_LOG_VERBOSE) << "ofxPresets::stopSequence:: Stopping interpolation";
-    interpolationDataMap.clear();
-}
-
-/// <summary>
-/// Stops the running sequence and interpolation
-/// </summary>
-void ofxPresets::stop() {
-    stopInterpolating();
-    stopSequence();
-}
-
-
-/// <summary>
-/// Update interpolations and sequence
-/// </summary>
-void ofxPresets::update() {
-    updateParameters();
-    updateSequence();
-}
 
 
 // Update the sequencer
@@ -571,7 +626,6 @@ void ofxPresets::updateSequence() {
 }
 
 
-
 /// <summary>
 /// Move to the next step in the sequence. Restart if the end is reached
 /// </summary>
@@ -582,6 +636,13 @@ void ofxPresets::advanceSequenceIndex() {
     }
 }
 
+
+#pragma endregion
+
+
+
+
+#pragma region Listeners
 
 /// <summary>
 /// Event to notify that a preset has finished
@@ -610,27 +671,12 @@ void ofxPresets::onSequenceFinished() {
 }
 
 
-/// <summary>
-/// Returns the current preset item in the sequence
-/// Will report the actual preset when -1 (random) is found
-/// </summary>
-/// <returns></returns>
-int ofxPresets::getCurrentPreset() {
-    return lastAppliedPreset;
-
-	// TODO: Should be enough to return lastAppliedPreset, but need more testing if need to report the -1
-    //if (sequence.get().size() > 0 && sequenceIndex <= sequence.get().size()) {
-    //    if (sequence.get()[sequenceIndex] >= 0)
-    //        return sequence.get()[sequenceIndex];
-    //}
-    //else {
-    //    return lastAppliedPreset;
-    //}
-    //return 0;
-}
+#pragma endregion
 
 
 
+
+#pragma region Parsing
 
 /// <summary>
 /// Parse an string sequence into a vector of integers
@@ -769,3 +815,4 @@ std::string ofxPresets::removeInvalidCharacters(const std::string& input) {
 }
 
 
+# pragma endregion
