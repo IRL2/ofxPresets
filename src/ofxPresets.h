@@ -45,7 +45,7 @@ private:
 
     std::string convertIDtoJSonFilename(int id);
     bool fileExist(const std::string& jsonFilePath);
-    static std::string removeInvalidCharacters(const std::string& input);
+    //static std::string removeInvalidCharacters(const std::string& input);
 	std::string folderPath = "data\\";
 
     std::string sequenceString;
@@ -100,6 +100,7 @@ public:
 
 	ofParameter<std::vector<int>> sequence;
     int getCurrentPreset();
+    static std::string removeInvalidCharacters(const std::string& input);
 
     bool isInterpolating() { return !interpolationDataMap.empty(); } // for when parameters are being interpolated
     bool isPlayingSequence() { return isPlaying; }
@@ -115,6 +116,7 @@ public:
     ofEvent<void> sequencePresetFinished;
     ofEvent<void> transitionFinished;
     ofEvent<void> sequenceFinished;
+	ofEvent<void> presetAppicationStarted;
 };
 
 
@@ -403,6 +405,7 @@ void ofxPresets::applyPreset(int id, float duration) {
     if (id < 0) {
         mutateFromPreset(id, mutationPercentage);
         lastAppliedPreset = id;
+		presetAppicationStarted.notify();
         return;
     }
 
@@ -416,6 +419,7 @@ void ofxPresets::applyPreset(int id, float duration) {
     if (fileExist(jsonFilePath)) {
         applyJsonToParameters(jsonFilePath, duration);
         lastAppliedPreset = id;
+        presetAppicationStarted.notify();
     }
     else {
         ofLog() << "ofxPresets::applyPreset:: No json file for preset " << id << " on " << jsonFilePath;
@@ -651,10 +655,11 @@ void ofxPresets::updateParameters() {
     }
 
     float currentTime = ofGetElapsedTimef();
+    float t;
 
     for (auto& [group, interpolationData] : interpolationDataMap) {
         float elapsedTime = currentTime - interpolationData.startTime;
-        float t = std::min(elapsedTime / interpolationDuration.get(), 1.0f);
+        t = std::min(elapsedTime / interpolationDuration.get(), 1.0f);
 
         for (auto& [key, targetValue] : interpolationData.targetValues) {
             float startValue = currentParameterValues[group][key];
@@ -673,14 +678,10 @@ void ofxPresets::updateParameters() {
                 }
             }
         }
-
-        if (t >= 1.0f) { // it means (currentTime - interpolationData.startTime >= interpolationData.duration)
-            interpolationDataMap.erase(group);
-            if (interpolationDataMap.empty()) {
-				onTransitionFinished();
-                break;
-            }
-        }
+    }
+    if (t >= 1.0f) { // it means (currentTime - interpolationData.startTime >= interpolationData.duration)
+        interpolationDataMap.clear();
+        onTransitionFinished();
     }
 }
 
