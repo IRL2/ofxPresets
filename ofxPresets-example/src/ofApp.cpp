@@ -8,12 +8,14 @@ public:
 	ofParameter<int> x;
 	ofParameter<int> y;
 	ofParameter<int> radius;
+	ofParameter<ofColor> color;
 
 	Params() {
 		groupName = "params";
 
 		parameterMap["x"] = &x.set("x pos", 0);
 		parameterMap["y"] = &y;
+		parameterMap["color"] = &color;
 		// radius is not added to the map, so it won't be saved
 	}
 };
@@ -48,6 +50,8 @@ void ofApp::setup(){
 	gui.add(sequenceInput.set("Sequence", "1, 2*, ?-3, 8"));
 	gui.add(currPreset.setup("Current preset", ""));
 	gui.add(internalSequence.setup("Internal seq", ""));
+
+	gui.add(p.color.set("Color", ofColor::white));
 }
 
 //--------------------------------------------------------------
@@ -59,6 +63,7 @@ void ofApp::update(){
 
 //--------------------------------------------------------------
 void ofApp::draw(){
+	ofSetColor(p.color);
 	ofDrawCircle(p.x, p.y, p.radius);
 	gui.draw();
 

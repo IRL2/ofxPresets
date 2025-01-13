@@ -103,7 +103,7 @@ public:
     static std::string removeInvalidCharacters(const std::string& input);
 
     bool isInterpolating() { return !interpolationDataMap.empty(); } // for when parameters are being interpolated
-    bool isPlayingSequence() { return isPlaying; }
+    bool isPlayingSequence() const { return isPlaying; }
 
     bool presetExist(int id);
 
@@ -143,7 +143,7 @@ void ofxPresets::update() {
 
 
 /// <summary>
-/// Apply the values from a JSON file to the parameters
+/// Apply the values from a JSON file into to the parameter interpolation map
 /// </summary>
 /// <param name="jsonFilePath">Full path to the json file</param>
 void ofxPresets::applyJsonToParameters(const std::string& jsonFilePath, float duration) {
@@ -204,7 +204,8 @@ void ofxPresets::applyJsonToParameters(const std::string& jsonFilePath, float du
                         else if (paramTypeName == typeid(ofParameter<ofColor>).name()) {
                             ofColor color;
                             color.setHex(value.get<int>());
-                            dynamic_cast<ofParameter<ofColor>*>(param)->set(color);
+                            //dynamic_cast<ofParameter<ofColor>*>(param)->set(color);
+                            interpolationData.targetValues[key] = color.getHex();
                         }
                     }
                     catch (const std::exception& e) {
@@ -315,7 +316,7 @@ void ofxPresets::mutate(float percentage) {
 /// <param name="id"></param>
 /// <param name="percentage"></param>
 void ofxPresets::mutateFromPreset(int id, float percentage) {
-    ofLog() << "ofxPresets::mutateFromPreset:: About to mutate values from the preset " << -id;
+    ofLog(OF_LOG_VERBOSE) << "ofxPresets::mutateFromPreset:: About to mutate values from the preset " << -id;
 
     std::string jsonFilePath = convertIDtoJSonFilename(-id);
     if (!fileExist(jsonFilePath)) {
@@ -332,7 +333,7 @@ void ofxPresets::mutateFromPreset(int id, float percentage) {
     // Mutate the parameters with the given percentage
     mutationPercentage.set(percentage);
 
-	// TODO: this is repeated from the mutate() BUT using different source, should be a common function
+	// TODO: this is repeated from the mutate() BUT using different sources, should be a common function
     for (auto& [group, interpolationData] : interpolationDataMap) {
         for (auto& [key, targetValue] : interpolationData.targetValues) {
             float currentValue = currentParameterValues[group][key];
@@ -422,7 +423,7 @@ void ofxPresets::applyPreset(int id, float duration) {
         presetAppicationStarted.notify();
     }
     else {
-        ofLog() << "ofxPresets::applyPreset:: No json file for preset " << id << " on " << jsonFilePath;
+        ofLog(OF_LOG_WARNING) << "ofxPresets::applyPreset:: No json file for preset " << id << " : " << jsonFilePath;
     }
 }
 
@@ -455,16 +456,6 @@ int ofxPresets::getRandomPreset(int lowerPreset = 1, int higherPreset = 10) {
 /// <returns></returns>
 int ofxPresets::getCurrentPreset() {
     return lastAppliedPreset;
-
-    // TODO: Should be enough to return lastAppliedPreset, but need more testing if need to report the 0
-    //if (sequence.get().size() > 0 && sequenceIndex <= sequence.get().size()) {
-    //    if (sequence.get()[sequenceIndex] >= 0)
-    //        return sequence.get()[sequenceIndex];
-    //}
-    //else {
-    //    return lastAppliedPreset;
-    //}
-    //return 0;
 }
 
 
@@ -532,7 +523,7 @@ void ofxPresets::setFolderPath(const std::string& path) {
     folderPath = path;
 	
     if (!std::filesystem::exists(folderPath)) {
-		ofLog() << "ofxPresets::setFolderPath:: Creating folder " << folderPath;
+		ofLog(OF_LOG_NOTICE) << "ofxPresets::setFolderPath:: Creating folder " << folderPath;
 		std::filesystem::create_directory(folderPath);
 	}
 }
@@ -558,11 +549,8 @@ void ofxPresets::deletePreset(int id) {
     std::string jsonFilePath = convertIDtoJSonFilename(id);
     if (fileExist(jsonFilePath)) {
         std::remove(jsonFilePath.c_str());
-        ofLog() << "ofxPresets::deletePreset" << "Preset " << id << " deleted";
+        ofLog(OF_LOG_VERBOSE) << "ofxPresets::deletePreset" << "Preset " << id << " deleted";
     }
-    //else {
-    //	ofLog() << "ofxPresets::deletePreset:: No json file for preset " << idStr;
-    //}
 }
 
 
@@ -576,14 +564,14 @@ void ofxPresets::clonePresetTo(int from, int to) {
     std::string toJsonFilePath = convertIDtoJSonFilename(to);
 
     if (fileExist(fromJsonFilePath)) {
-        ofLog() << "ofxPresets::clonePresetTo:: Cloning preset " << from << " to " << to;
+        ofLog(OF_LOG_VERBOSE) << "ofxPresets::clonePresetTo:: Cloning preset " << from << " to " << to;
         std::ifstream src(fromJsonFilePath, std::ios::binary);
         std::ofstream dst(toJsonFilePath, std::ios::binary);
         dst << src.rdbuf();
         dst.close();
     }
     else {
-        ofLog() << "ofxPresets::clonePresetTo:: No json file for source preset " << from << ". Looking for " << toJsonFilePath;
+        ofLog(OF_LOG_ERROR) << "ofxPresets::clonePresetTo:: No json file for source preset " << from << ". Looking for " << toJsonFilePath;
     }
 }
 
@@ -599,7 +587,7 @@ void ofxPresets::clonePresetTo(int from, int to) {
 /// <param name="jsonFilePath"></param>
 /// <param name="parameterGroups"></param>
 void ofxPresets::saveParametersToJson(const std::string& jsonFilePath) {
-    ofLog() << "ofxPresets::saveParametersToJson:: Saving JSON to esencia parameters to " << jsonFilePath;
+    ofLog(OF_LOG_NOTICE) << "ofxPresets::saveParametersToJson:: Saving JSON to esencia parameters to " << jsonFilePath;
 
     ofJson j;
 
@@ -669,11 +657,17 @@ void ofxPresets::updateParameters() {
                 if (paramGroup->groupName == group) {
                     auto param = paramGroup->parameterMap[key];
                     const std::string paramTypeName = typeid(*param).name();
+
                     if (paramTypeName == typeid(ofParameter<int>).name()) {
                         dynamic_cast<ofParameter<int>*>(param)->set(static_cast<int>(interpolatedValue));
                     }
                     else if (paramTypeName == typeid(ofParameter<float>).name()) {
                         dynamic_cast<ofParameter<float>*>(param)->set(interpolatedValue);
+                    }
+                    else if (paramTypeName == typeid(ofParameter<ofColor>).name()) {
+                        ofColor color = dynamic_cast<ofParameter<ofColor>*>(param)->get();
+						color.lerp(ofColor::fromHex(targetValue), t);
+                        dynamic_cast<ofParameter<ofColor>*>(param)->set(color);
                     }
                 }
             }
@@ -703,7 +697,7 @@ void ofxPresets::loadSequence(const std::string& seqString) {
     sequence.set(parseSequence(this->sequenceString));
     sequenceIndex = 0;
 
-    ofLog() << "ofxPresets::loadSequence:: Sequence loaded " << ofToString(sequence.get());
+    ofLog(OF_LOG_NOTICE) << "ofxPresets::loadSequence:: Sequence loaded " << ofToString(sequence.get());
 }
 
 
