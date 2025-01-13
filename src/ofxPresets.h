@@ -235,6 +235,9 @@ void ofxPresets::storeCurrentValues() {
                 }
                 else if (paramTypeName == typeid(ofParameter<float>).name()) {
                     groupValues[key] = dynamic_cast<ofParameter<float>*>(param)->get();
+				}
+                else if (paramTypeName == typeid(ofParameter<ofColor>).name()) {
+                    groupValues[key] = dynamic_cast<ofParameter<ofColor>*>(param)->get().getHex();
                 }
             }
         }
@@ -665,7 +668,10 @@ void ofxPresets::updateParameters() {
                         dynamic_cast<ofParameter<float>*>(param)->set(interpolatedValue);
                     }
                     else if (paramTypeName == typeid(ofParameter<ofColor>).name()) {
-                        ofColor color = dynamic_cast<ofParameter<ofColor>*>(param)->get();
+
+                        ofColor color;
+                        //= ofColor::fromHex(startValue);
+                        color.setHex(startValue);
 						color.lerp(ofColor::fromHex(targetValue), t);
                         dynamic_cast<ofParameter<ofColor>*>(param)->set(color);
                     }
