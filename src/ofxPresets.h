@@ -264,7 +264,6 @@ void ofxPresets::mutate(){
 void ofxPresets::mutate(float percentage) {
 	ofLog(OF_LOG_VERBOSE) << "ofxPresets::mutate:: Mutating current parameter values with percentage " << percentage;
 
-	//percentage = std::clamp(percentage/2, 0.0f, 1.0f);
 	mutationPercentage.set(percentage);
 
     storeCurrentValues(); // Store current values as a reference
@@ -294,6 +293,11 @@ void ofxPresets::mutate(float percentage) {
                     minValue = floatParam->getMin();
                     maxValue = floatParam->getMax();
                 }
+				else if (paramTypeName == typeid(ofParameter<ofColor>).name()) {
+					currentValue = dynamic_cast<ofParameter<ofColor>*>(param)->get().getHue();
+					minValue = 0.0f;
+					maxValue = 255.0f;
+				}
 
                 // Calculate the random mutation
                 float range = maxValue - minValue;
@@ -304,6 +308,14 @@ void ofxPresets::mutate(float percentage) {
                 mutatedValue = std::clamp(mutatedValue, minValue, maxValue);
 
                 interpolationData.targetValues[key] = mutatedValue;
+
+				// Special case for colors, mutate the brightness and hue
+                if (paramTypeName == typeid(ofParameter<ofColor>).name()) {
+                    ofColor targetColor = dynamic_cast<ofParameter<ofColor>*>(param)->get();
+                    targetColor.setHue(mutatedValue);
+                    targetColor.setBrightness(mutatedValue-currentValue+ targetColor.getBrightness());
+                    interpolationData.targetValues[key] = targetColor.getHex();
+                }
             }
         }
 
@@ -358,21 +370,45 @@ void ofxPresets::mutateFromPreset(int id, float percentage) {
                             auto floatParam = dynamic_cast<ofParameter<float>*>(param);
                             minValue = floatParam->getMin();
                             maxValue = floatParam->getMax();
+						}
+                        else if (paramTypeName == typeid(ofParameter<ofColor>).name()) {
+                            targetValue = dynamic_cast<ofParameter<ofColor>*>(param)->get().getHue();
+                            minValue = 0.0f;
+                            maxValue = 255.0f;
+                        }
+                        // Calculate the random mutation
+                        float range = maxValue - minValue;
+                        float mutation = ofRandomGaussian(0.0f, percentage / 4) * range;
+			            float mutatedValue = targetValue + mutation; // mutationFromPreset does use the target value instead of the current
+
+                        // Clamp the mutated value within the min and max range
+                        mutatedValue = std::clamp(mutatedValue, minValue, maxValue);
+
+                        // Update the target value with the mutated value
+                        interpolationData.targetValues[key] = mutatedValue;
+
+                        // Special case for colors, mutate the brightness and hue
+                        if (paramTypeName == typeid(ofParameter<ofColor>).name()) {
+                            ofColor targetColor = dynamic_cast<ofParameter<ofColor>*>(param)->get();
+                            
+                            // change the hue
+                            targetColor.setHue(mutatedValue);
+
+							// repeat for brightness
+                            mutation = ofRandomGaussian(0.0f, percentage / 4) * range;
+                            mutatedValue = targetColor.getBrightness() + mutation;
+                            targetColor.setBrightness(mutatedValue);
+
+                            // repeat for saturation
+                            mutation = ofRandomGaussian(0.0f, percentage / 4) * range;
+                            mutatedValue = targetColor.getSaturation() + mutation;
+                            targetColor.setSaturation(mutatedValue);
+
+                            interpolationData.targetValues[key] = targetColor.getHex();
                         }
                     }
                 }
             }
-
-            // Calculate the random mutation
-            float range = maxValue - minValue;
-            float mutation = ofRandomGaussian(0.0f, percentage / 4) * range;
-			float mutatedValue = targetValue + mutation; // mutationFromPreset does use the target value instead of the current
-
-            // Clamp the mutated value within the min and max range
-            mutatedValue = std::clamp(mutatedValue, minValue, maxValue);
-
-            // Update the target value with the mutated value
-            interpolationData.targetValues[key] = mutatedValue;
         }
     }
 }
