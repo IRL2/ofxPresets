@@ -204,8 +204,13 @@ void ofxPresets::applyJsonToParameters(const std::string& jsonFilePath, float du
                         else if (paramTypeName == typeid(ofParameter<ofColor>).name()) {
                             ofColor color;
                             color.setHex(value.get<int>());
-                            //dynamic_cast<ofParameter<ofColor>*>(param)->set(color);
+                            if (j[group].contains(key + "_alpha")) {
+                                color.a = j[group][key + "_alpha"].get<int>();
+                            } else {
+                                color.a = 255;
+                            }
                             interpolationData.targetValues[key] = color.getHex();
+                            interpolationData.targetValues[key + "_alpha"] = color.a;
                         }
                     }
                     catch (const std::exception& e) {
@@ -237,7 +242,9 @@ void ofxPresets::storeCurrentValues() {
                     groupValues[key] = dynamic_cast<ofParameter<float>*>(param)->get();
 				}
                 else if (paramTypeName == typeid(ofParameter<ofColor>).name()) {
-                    groupValues[key] = dynamic_cast<ofParameter<ofColor>*>(param)->get().getHex();
+                    ofColor color = dynamic_cast<ofParameter<ofColor>*>(param)->get();
+                    groupValues[key] = color.getHex();
+                    groupValues[key + "_alpha"] = color.a;
                 }
             }
         }
@@ -314,7 +321,9 @@ void ofxPresets::mutate(float percentage) {
                     ofColor targetColor = dynamic_cast<ofParameter<ofColor>*>(param)->get();
                     targetColor.setHue(mutatedValue);
                     targetColor.setBrightness(mutatedValue-currentValue+ targetColor.getBrightness());
+                    targetColor.a = std::clamp(targetColor.a + ofRandomGaussian(0.0f, percentage / 4) * 255.0f, 0.0f, 255.0f);
                     interpolationData.targetValues[key] = targetColor.getHex();
+                    interpolationData.targetValues[key + "_alpha"] = targetColor.a;
                 }
             }
         }
@@ -397,14 +406,20 @@ void ofxPresets::mutateFromPreset(int id, float percentage) {
 							// repeat for brightness
                             mutation = ofRandomGaussian(0.0f, percentage / 4) * range;
                             mutatedValue = targetColor.getBrightness() + mutation;
+                            mutatedValue = std::clamp(mutatedValue, 0.0f, 255.0f);
                             targetColor.setBrightness(mutatedValue);
 
                             // repeat for saturation
                             mutation = ofRandomGaussian(0.0f, percentage / 4) * range;
                             mutatedValue = targetColor.getSaturation() + mutation;
+                            mutatedValue = std::clamp(mutatedValue, 0.0f, 255.0f);
                             targetColor.setSaturation(mutatedValue);
 
+                            // alpha value
+                            targetColor.a = std::clamp(targetColor.a + ofRandomGaussian(0.0f, percentage / 4) * 255.0f, 0.0f, 255.0f);
+
                             interpolationData.targetValues[key] = targetColor.getHex();
+                            interpolationData.targetValues[key + "_alpha"] = targetColor.a;
                         }
                     }
                 }
@@ -649,6 +664,7 @@ void ofxPresets::saveParametersToJson(const std::string& jsonFilePath) {
                     else if (paramTypeName == typeid(ofParameter<ofColor>).name()) {
                         ofColor color = dynamic_cast<ofParameter<ofColor>*>(param)->get();
                         groupJson[key] = color.getHex();
+                        groupJson[key + "_alpha"] = color.a;
                     }
                 }
                 catch (const std::exception& e) {
@@ -689,6 +705,12 @@ void ofxPresets::updateParameters() {
         t = std::min(elapsedTime / interpolationDuration.get(), 1.0f);
 
         for (auto& [key, targetValue] : interpolationData.targetValues) {
+
+            // skip _alpha keys, already covered by the color ones
+            if (key.find("_alpha") != std::string::npos) {
+                continue;
+            }
+
             float startValue = currentParameterValues[group][key];
             float interpolatedValue = ofxeasing::map_clamp(t, 0.0f, 1.0f, startValue, targetValue, &ofxeasing::linear::easeInOut);
 
@@ -704,11 +726,14 @@ void ofxPresets::updateParameters() {
                         dynamic_cast<ofParameter<float>*>(param)->set(interpolatedValue);
                     }
                     else if (paramTypeName == typeid(ofParameter<ofColor>).name()) {
-
                         ofColor color;
-                        //= ofColor::fromHex(startValue);
                         color.setHex(startValue);
 						color.lerp(ofColor::fromHex(targetValue), t);
+                        if (interpolationData.targetValues.find(key + "_alpha") != interpolationData.targetValues.end()) {
+                            color.a = ofLerp(currentParameterValues[group][key + "_alpha"], interpolationData.targetValues[key + "_alpha"], t);
+                        } else {
+                            color.a = 255;
+                        }
                         dynamic_cast<ofParameter<ofColor>*>(param)->set(color);
                     }
                 }
