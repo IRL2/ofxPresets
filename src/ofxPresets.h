@@ -70,14 +70,18 @@ private:
 
     void onPresetFinished();
     void onTransitionFinished();
-    void onSequenceFinished();
+    //void onSequenceFinished(); // not implemented
 
     void updateParameters();
     void updateSequence();
     void advanceSequenceIndex();
 
 public:
+    void setup(ofParameterGroup& parameters);
+    void setup(ofxPresetsParametersBase& parameters);
+    void setup(std::vector<ofParameterGroup>& parameters);
     void setup(std::vector<ofxPresetsParametersBase*>& parameters);
+
     void update();
 
     void applyPreset(int id);
@@ -104,6 +108,7 @@ public:
 
     bool isInterpolating() { return !interpolationDataMap.empty(); } // for when parameters are being interpolated
     bool isPlayingSequence() const { return isPlaying; }
+    int getSequenceIndex() const { return sequenceIndex; }
 
     bool presetExist(int id);
 
@@ -121,11 +126,64 @@ public:
 
 
 /// <summary>
-/// Loads the parameterBase vector
+/// Setup the preset manager from a vector containing the parameters structs
 /// </summary>
-/// <param name="parameters"></param>
+/// <param name="parameters">i.e.
+/// std::vector<ofxPresetsParametersBase*> allParameters;
+/// allParameters = { &myParamStruct1, &myOtherParams };
+/// </param>
 void ofxPresets::setup(std::vector<ofxPresetsParametersBase*>& parameters) {
     this->params = &parameters;
+}
+
+
+/// <summary>
+/// Setup the preset manager from a single parameter struct
+/// </summary>
+/// <param name="parameters"></param>
+void ofxPresets::setup(ofxPresetsParametersBase& parameters) {
+    this->params = new std::vector<ofxPresetsParametersBase*>{ &parameters };
+}
+
+
+/// <summary>
+/// Setup the preset manager from an ofxParameterGroup
+/// </summary>
+/// <param name="parameters"></param>
+void ofxPresets::setup(ofParameterGroup& parameters) {
+    struct p : ofxPresetsParametersBase {
+        p(ofParameterGroup& parameters) {
+            groupName = parameters.getName();
+            for (auto& param : parameters) {
+                parameterMap[param->getName()] = param.get();
+            }
+        }
+    };
+    auto paramGroup = new p(parameters);
+
+    this->params = new std::vector<ofxPresetsParametersBase*>{ paramGroup };
+}
+
+
+/// <summary>
+/// Setup the preset manager from a vector of ofxParameterGroups
+/// </summary>
+/// <param name="parameters"></param>
+void ofxPresets::setup(std::vector<ofParameterGroup>& parameters) {
+    std::vector<ofxPresetsParametersBase*> allParameters;
+    for (auto& paramGroup : parameters) {
+        struct p : ofxPresetsParametersBase {
+            p(ofParameterGroup& parameters) {
+                groupName = parameters.getName();
+                for (auto& param : parameters) {
+                    parameterMap[param->getName()] = param.get();
+                }
+            }
+        };
+        auto param = new p(paramGroup);
+        allParameters.push_back(param);
+    }
+    this->params = &allParameters;
 }
 
 
@@ -872,6 +930,7 @@ void ofxPresets::onTransitionFinished() {
 
 
 /// <summary>
+/// NOT IN USE
 /// Event to notify that a transition has finished
 /// </summary>
 void ofxPresets::onSequenceFinished() {
