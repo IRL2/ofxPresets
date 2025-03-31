@@ -36,31 +36,26 @@ ofParameter<std::string> sequenceInput;
 void ofApp::setup(){
 	//ofSetLogLevel(OF_LOG_VERBOSE);
 
-    p.x.set("xx", ofGetWidth() / 2, 0, ofGetWidth());
-    p.y.set("yy", ofGetHeight() / 2, 0, ofGetHeight());
+    p.x.set("x", ofGetWidth() / 2, 0, ofGetWidth());
+    p.y.set("y", ofGetHeight() / 2, 0, ofGetHeight());
     p.radius.set("radius", 50);
     p.color.set("color", ofColor::white);
 
 	// Different ways of setting up the presets
 
 	// 1. using ofParameterGroup
-
     pGroup.setName("params");
 	pGroup.add(p.x);
 	pGroup.add(p.y);
 	pGroup.add(p.color);
     manager.setup(pGroup);
 
-    // 1. Just pass the a single parameter struct
+    // 2. Use the ofxPresetsParametersBase struct individually or in a group
 	//manager.setup(p);
-
-	// 2. When using multiple parameter groups, use a vector
-	//allParameters = { &p };
+	// 
+	// or various in a vector
+	//allParameters = { &p, &q };
 	//manager.setup( allParameters );
-
-	p.x.set("x pos", ofGetWidth() / 2, 0, ofGetWidth());
-	p.y.set("y pos", ofGetHeight() / 2, 0, ofGetHeight());
-	p.radius = 50;
 
 	ofAddListener(manager.transitionFinished, this, &ofApp::onPresetChanged);
 

@@ -770,7 +770,7 @@ void ofxPresets::updateParameters() {
             }
 
             float startValue = currentParameterValues[group][key];
-            float interpolatedValue = ofxeasing::map_clamp(t, 0.0f, 1.0f, startValue, targetValue, &ofxeasing::linear::easeInOut);
+            float interpolatedValue = ofxeasing::map_clamp(t, 0.0f, 1.0f, startValue, targetValue, &ofxeasing::quad::easeInOut);
 
             for (auto& paramGroup : *params) {
                 if (paramGroup->groupName == group) {
@@ -933,10 +933,10 @@ void ofxPresets::onTransitionFinished() {
 /// NOT IN USE
 /// Event to notify that a transition has finished
 /// </summary>
-void ofxPresets::onSequenceFinished() {
-    ofLogVerbose("ofxPresets::onSequenceFinished") << "Sequence finished";
-    ofNotifyEvent(sequenceFinished, this);
-}
+//void ofxPresets::onSequenceFinished() {
+//    ofLogVerbose("ofxPresets::onSequenceFinished") << "Sequence finished";
+//    ofNotifyEvent(sequenceFinished, this);
+//}
 
 
 #pragma endregion
