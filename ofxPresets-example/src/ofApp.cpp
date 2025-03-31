@@ -20,12 +20,14 @@ public:
 	}
 };
 Params p;
-std::vector<ofxPresetsParametersBase*> allParameters;
+std::vector<ofxPresetsParametersBase*> allParameters;  // when using more than one group, wrap them on a vector
+
+ofParameterGroup pGroup;
 
 ofxPresets manager;
 
 ofxPanel gui;
-ofxLabel currPreset;
+ofxLabel currentPreset;
 ofxLabel instructions;
 ofxLabel internalSequence;
 ofParameter<std::string> sequenceInput;
@@ -34,8 +36,27 @@ ofParameter<std::string> sequenceInput;
 void ofApp::setup(){
 	//ofSetLogLevel(OF_LOG_VERBOSE);
 
-	allParameters = { &p };
-	manager.setup( allParameters );
+    p.x.set("xx", ofGetWidth() / 2, 0, ofGetWidth());
+    p.y.set("yy", ofGetHeight() / 2, 0, ofGetHeight());
+    p.radius.set("radius", 50);
+    p.color.set("color", ofColor::white);
+
+	// Different ways of setting up the presets
+
+	// 1. using ofParameterGroup
+
+    pGroup.setName("params");
+	pGroup.add(p.x);
+	pGroup.add(p.y);
+	pGroup.add(p.color);
+    manager.setup(pGroup);
+
+    // 1. Just pass the a single parameter struct
+	//manager.setup(p);
+
+	// 2. When using multiple parameter groups, use a vector
+	//allParameters = { &p };
+	//manager.setup( allParameters );
 
 	p.x.set("x pos", ofGetWidth() / 2, 0, ofGetWidth());
 	p.y.set("y pos", ofGetHeight() / 2, 0, ofGetHeight());
@@ -48,7 +69,7 @@ void ofApp::setup(){
 	gui.add(manager.interpolationDuration.set("Transition duration", 0.5f, 0.0f, 20.0f));
 	gui.add(manager.sequencePresetDuration.set("Preset duration", 0.5f, 0.0f, 20.0f));
 	gui.add(sequenceInput.set("Sequence", "1, 2*, ?-3, 8"));
-	gui.add(currPreset.setup("Current preset", ""));
+	gui.add(currentPreset.setup("Current preset", ""));
 	gui.add(internalSequence.setup("Internal seq", ""));
 
 	gui.add(p.color.set("Color", ofColor::white));
@@ -57,7 +78,7 @@ void ofApp::setup(){
 //--------------------------------------------------------------
 void ofApp::update(){
 	manager.update();
-	currPreset = ofToString(manager.getCurrentPreset());
+	currentPreset = ofToString(manager.getCurrentPreset());
 	internalSequence = ofToString(manager.sequence.get());
 }
 
