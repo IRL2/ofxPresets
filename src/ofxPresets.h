@@ -4,24 +4,10 @@
 #include "ofJson.h"
 #include "ofLog.h"
 #include "ofxPresetsParametersBase.h"
-#include "ofxEasing.h"
+#include "ofxSEasing.h"
 
 
-/*
-* the json file follows the same structure as the parameters, with the first level being the group name
-{
-    "simulation": {
-        "particles": 1000,
-        "radius": 3,
-        ...
-    },
-    "render": {
-        "param1": value,
-        "param2": value,
-        ...
-    }
-}
-*/
+
 
 const std::string DEFAULT_FOLDER_PATH = "data\\";
 const float DEFAULT_SEQUENCE_PRESET_DURATION = 5.0f;
@@ -30,7 +16,8 @@ const float DEFAULT_MUTATION_PERCENTAGE = 0.1f;
 const int MAX_RANDOM_PRESET = 16;
 
 
-// TODO: Use the map directly and store a common startTime, no need for a super struct
+// This struct stores the target values for the interpolation,
+// and a starting time
 struct InterpolationData {
     float startTime = 0.0f;
     std::unordered_map<std::string, float> targetValues;
@@ -45,7 +32,6 @@ private:
 
     std::string convertIDtoJSonFilename(int id);
     bool fileExist(const std::string& jsonFilePath);
-    //static std::string removeInvalidCharacters(const std::string& input);
 	std::string folderPath = "data\\";
 
     std::string sequenceString;
@@ -67,6 +53,8 @@ private:
     std::vector<std::string> splitString(const std::string& str, char delimiter) const;
     std::vector<int> unfoldRanges(std::string& str);
     std::vector<int> unfoldRandomRange(std::vector<std::string> randomRange);
+    
+    std::function<float(float)> easingFunction = ofxSEeasing::easeInOutCubic;
 
     void onPresetFinished();
     void onTransitionFinished();
@@ -77,6 +65,21 @@ private:
     void advanceSequenceIndex();
 
 public:
+    ofxPresets() {}
+
+    ~ofxPresets() {
+        stop();
+        if (params) {
+            delete params;
+        }
+        if (!interpolationDataMap.empty()) {
+            interpolationDataMap.clear();
+        }
+        if (!currentParameterValues.empty()) {
+            currentParameterValues.clear();
+        }
+    }
+
     void setup(ofParameterGroup& parameters);
     void setup(ofxPresetsParametersBase& parameters);
     void setup(std::vector<ofParameterGroup>& parameters);
@@ -118,11 +121,22 @@ public:
     ofParameter<float> interpolationDuration = DEFAULT_INTERPOLATION_DURATION;
     ofParameter<float> mutationPercentage = DEFAULT_MUTATION_PERCENTAGE;
 
+    void setEasingFunction(std::function<float(float)> func);
+
     ofEvent<void> sequencePresetFinished;
     ofEvent<void> transitionFinished;
     ofEvent<void> sequenceFinished;
 	ofEvent<void> presetAppicationStarted;
 };
+
+
+/// <summary>
+/// Set the easing function to be used for the interpolation
+/// </summary>
+/// <param name="func">Take one from the ofxSEasing or use yours</param>
+void ofxPresets::setEasingFunction(std::function<float(float)> func) {
+    easingFunction = func;
+}
 
 
 /// <summary>
@@ -760,7 +774,7 @@ void ofxPresets::updateParameters() {
 
     for (auto& [group, interpolationData] : interpolationDataMap) {
         float elapsedTime = currentTime - interpolationData.startTime;
-        t = std::min(elapsedTime / interpolationDuration.get(), 1.0f);
+        t = std::min(elapsedTime / interpolationDuration.get(), 1.0f); // t is the normalized time (value between 0 and 1)
 
         for (auto& [key, targetValue] : interpolationData.targetValues) {
 
@@ -770,7 +784,7 @@ void ofxPresets::updateParameters() {
             }
 
             float startValue = currentParameterValues[group][key];
-            float interpolatedValue = ofxeasing::map_clamp(t, 0.0f, 1.0f, startValue, targetValue, &ofxeasing::quad::easeInOut);
+            float interpolatedValue = ofxSEeasing::map_clamp(t, 0.0f, 1.0f, startValue, targetValue, easingFunction(t));
 
             for (auto& paramGroup : *params) {
                 if (paramGroup->groupName == group) {
