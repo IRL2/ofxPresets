@@ -1,8 +1,9 @@
 {
     "params": {
-        "color": 14566247,
-        "color_alpha": 123,
-        "x": 581,
-        "y": 328
+        "color": 14582091,
+        "color_alpha": 255,
+        "radius": 70,
+        "x": 399,
+        "y": 237
     }
 }
