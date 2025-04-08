@@ -2,15 +2,25 @@
 
 ## tl;dr
 
-Preset manager and sequencer for openFrameworks
+openFrameworks addon
 
-No GUI, JSON file format storage, tested on OF 0.12.0
+Linear preset manager, interpolation and sequencer
 
-Special sequencer syntax
-    - step seq: 1, 2, 3, 4
+Works on ofParameters and ofParameterGroups
+
+No GUI, JSON file format storage, tested on OF 0.12
+
+### Features
+
+- Save and load presets from JSON files
+- [Interpolation](#interpolation-parameters) between presets
+- [Mutation] of parameters
+- [Events] to follow the preset application and sequence steps
+- [Sequencer] to play a sequence of presets
+    - steps: 1, 2, 3, 4
     - ranges: 1 - 5
-    - random preset: 1, r, 5
-    - preset mutation:  5m
+    - random preset: 1, ?, 5
+    - preset mutation:  5*
     - randomized repetition: ? - 3
 
 ---
@@ -32,9 +42,7 @@ Overall steps to use the addon:
 #include "ofxPresets.h"
 ```
 
-1. Define your ofParameters and group them [see all options](#how-to-pass-the-parameters-to-the-manager)
-
-The most standard way is using an ofParameterGroup
+1. Define your ofParameters and group them
 
 ```cpp
 ofParameterGroup group;
@@ -44,13 +52,17 @@ group.setName("myParams");
 group.add(x.set("x", 0, 100));
 ```
 
-2. Create the presets manager and pass parameters to it
+The most standard way is using an ofParameterGroup, ([see alternatives](#how-to-load-the-parameters-to-the-manager))
+
+2. Create the presets manager and add the parameter group to be managed
 
 ```cpp
     ofxPresets manager;
 ...
    manager.setup( myParams );
 ```
+
+It can load multiple groups [see how](#how-to-load-the-parameters-to-the-manager)]
 
 3. Add the manager to the update loop
 
@@ -60,14 +72,14 @@ void ofApp::update(){
 }
 ```
 
-4. Use it!
+4. Save and apply presets
 
 - `savePreset(int presetID)` to save the current values into the preset json file
 - `applyPreset(int presetID, float interpolationDuration)` to load the preset json file and apply the values into the preset objects
 
-[See interpolation parameters](#interpolation-parameters)
+5. Control sequences and mutation
 
-Basic commands example:
+Common usage snippet:
 
 ```cpp
 void ofApp::keyReleased(ofKeyEventArgs& e) {
@@ -101,25 +113,22 @@ void ofApp::keyReleased(ofKeyEventArgs& e) {
 
 ## Interpolation parameters
 
-Interpolation happens when applying presets, either directly or when sequencing.
+Interpolation happens when `applyPreset` is called, including while sequencing.
 
-To control the interpolation time use
-```cpp
-ofParameter<float> manager.interpolationDuration;
-```
+Set the interpolation time by assigning a value to the `interpolationDuration` parameter. This is a float value in seconds.
 
-Within that time, **all parameter values** are interpolated using an easing function. 
-QuadInOut by default.
+Within that time, all parameter values are interpolated using an easing function. 
+**QuadInOut is the default**.
 
-This can be changed to any other easing function from the included ofxSEeasing class (or your own).
+Easing function can be changed. Use the included ofxSEeasing class, or write your own.
 
 ```cpp
-// setEasingFunction(std::function<float(float)> func);
-manager.setEasingFunction(ofxSEeasing::easeInOutCubic);
+    // setEasingFunction(std::function<float(float)> func);
+    manager.setEasingFunction(ofxSEeasing::easeInOutCubic);
 ```
 
 
-## How to pass the parameters to the manager
+## How to load the parameters to the manager
 
 The desired parameters to be managed as presets should be provided in groups, using the `setup()` method.
 
@@ -131,23 +140,28 @@ You can provide a single parameter group or an `std::vector<>` of parameter grou
 
 Two different group types are supported: the standard ofParameterGroup and the provided ofxPresetsParametersBase,
 
+Currently supports this parameter types:
+- `ofParameter<int>`
+- `ofParameter<float>`
+- `ofParameter<bool>`, stored as an int 0 or 1 value
+- `ofParameter<ofColor>`, which stored as an int value, and a separated alpha int value
+
 ### Use ofParameterGroup
 
 The well known ofParameterGroup to group your parameters,
 
-Requires to set the group name and initialize all parameters before passing them to the manager
-
+Requires to set the group name and initialize all parameters before loading them to the manager:
 ```cpp
-ofParameterGroup group;
-group.setName("myParams");
-ofParameter<int> x;
-group.add(x.set("x pos", 0, 100));
+    ofParameterGroup group;
+    group.setName("myParams");
+    ofParameter<int> x;
+    group.add(x.set("x pos", 0, 100));
 ```
 
 ### Use the provided ofxParameterBase structure
 
 This is a wrapper class that may be handy to add extra logic to the group,
-like initializing the parameters, create resets, etc.
+like initializing the parameters, create resets, etc. Example:
 
 ```cpp
 struct Params : public ofxPresetsParametersBase {
@@ -169,13 +183,13 @@ public:
 }
 ```
 
-_The manager uses this ofxParameterBase class internally to store all parameter references_
+_The addon uses ofxParameterBase structures internally to store all parameter references and during the interpolation_
 
 ## Sequencer
 
 The sequencer allows to playback a sequence of presets.
 
-Main functions with self explanatory names:
+Main methods:
 - `.loadSequence(std::string)` to load a sequence string [see sequence string](#the-sequence-string)]
 - `.playSequence()` to play the loaded sequence
 - `.stopSequence()` to stop only the sequence playback
@@ -201,15 +215,15 @@ There are special syntax tokens for:
 - Randomized range: `? - 3`, will repeat a random preset 3 times
 - Preset mutation:  `5*`, will apply the preset #5 in a mutated fashion
 
-#### Sequence internals
+#### _the internal sequence string_
 
-The provided sequence string is parsed and stored in an internal vector of integers right before playback.
+When loading a sequence string, the manager will parse it and store the unrolled sequence in an internal vector of integers.
 
 The unrolled sequence is available in the manager in `ofParameter<std::vector<int>> sequence;`
 
 When unrolling the special tokens are replaced in the internal sequence vector:
-- `?` is replaced by `0`
-- `*` is replaced by the negative preset number `-#`
+- `?` is stored as `0`
+- `*` is stored as the negative preset number (i.e. `3*` will be `-3`)
 
 ## Mutation
 
@@ -256,12 +270,12 @@ bool isPlayingSequence();
 int getSequenceIndex();
 ```
 
-Events example:
+Example of using events:
 ```cpp
-ofAddListener(manager.transitionFinished, this, &ofApp::onPresetChanged);
+    ofAddListener(manager.transitionFinished, this, &ofApp::onPresetChanged);
 ...
 void ofApp::onPresetChanged() {
-	ofLog() << "Recieving preset changed event, now #" << manager.getCurrentPreset();
+    ofLog() << "Recieving preset changed event, now #" << manager.getCurrentPreset();
 }
 ```
 
@@ -292,4 +306,16 @@ JSON example:
 ```
 
 Set json file path with `manager.setPresetPath(std::string path);`
+
+---
+
+# why?
+
+This addon borns from working on [esencia](https://github.com/IRL2/esencia)
+(a reinterpreted interactive art installation) and the need of a simple way to handle presets and interpolation.
+
+ofParameters and ofParameterGroup are great for working with parameters, but it missed interpolation.
+So, one thing lead to the other and ended up adding all this features
+
+
 
