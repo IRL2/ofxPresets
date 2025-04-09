@@ -26,8 +26,11 @@ No GUI, JSON file format storage, tested on OF 0.12
 
 ## Instalation
 
-The usual ofx addons procedure, clone this repo or download it and uncompress it on your addons folder.
+The usual ofx addons procedure: clone this repo or download it and uncompress it on your addons folder.
 
+No other dependencies are required.
+
+Tested on oF 0.12, Windows, VS 2022 (v143 toolset)
 
 ## Usage
 
@@ -274,7 +277,7 @@ Example of using events:
     ofAddListener(manager.transitionFinished, this, &ofApp::onPresetChanged);
 ...
 void ofApp::onPresetChanged() {
-    ofLog() << "Recieving preset changed event, now #" << manager.getCurrentPreset();
+    ofLog() << "Receiving preset changed event, now #" << manager.getCurrentPreset();
 }
 ```
 
@@ -310,11 +313,10 @@ Set json file path with `manager.setPresetPath(std::string path);`
 
 # why?
 
-This addon borns from working on [esencia](https://github.com/IRL2/esencia)
+This addon is born from working on [esencia](https://github.com/IRL2/esencia)
 (a reinterpreted interactive art installation) and the need of a simple way to handle presets and interpolation.
-
-ofParameters and ofParameterGroup are great for working with parameters, but it missed interpolation.
-So, one thing lead to the other and ended up adding all this features
+ofParameters and ofParameterGroup are great for working with parameters, but they missed interpolation.
+The rest of the features were usefull for esencia, and I thought they could be useful for others.
 
 
 
