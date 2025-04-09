@@ -4,19 +4,18 @@
 
 openFrameworks addon
 
-Linear preset manager, interpolation and sequencer
-
-Works on ofParameters and ofParameterGroups
+Manages ofParameters groups on presets, interpolates between them, and plays sequences
 
 No GUI, JSON file format storage, tested on OF 0.12
 
 ### Features
 
-- Save and load presets from JSON files
-- [Interpolation](#interpolation-parameters) between presets
-- [Mutation] of parameters
-- [Events] to follow the preset application and sequence steps
-- [Sequencer] to play a sequence of presets
+- Save and load parameter values as presets in JSON files
+- Support multiple parameter groups
+- Apply preset values by smooth [interpolation](#interpolation-parameters)
+- Easy value [mutation](#mutation)
+- Provide [events](#events) to follow the preset application and sequence steps
+- A [sequencer] to play a sequence of presets, with handy syntax
     - steps: 1, 2, 3, 4
     - ranges: 1 - 5
     - random preset: 1, ?, 5
